@@ -1,0 +1,622 @@
+{
+  "DRIVERS": [
+    {
+      "id": 1,
+      "name": "Raj Patel",
+      "initials": "RP",
+      "location": "Phoenix, AZ",
+      "hos": 7.2,
+      "inspection": 6,
+      "fatigue": "low",
+      "status": "available",
+      "truck": "TRUCK-012",
+      "health": "healthy",
+      "score": 98,
+      "onTime": 97,
+      "color": "#39abd4",
+      "reasons": [
+        "HOS 7.2hrs · buffer 1.8hrs ✓",
+        "Inspection 6 days ago ✓",
+        "Fatigue: low ✓",
+        "Return load Dallas 71% ✓",
+        "Truck all green ✓"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Frank Chen",
+      "initials": "FC",
+      "location": "Tucson, AZ",
+      "hos": 1.8,
+      "inspection": 32,
+      "fatigue": "high",
+      "status": "blocked",
+      "truck": "TRUCK-007",
+      "health": "critical",
+      "score": 34,
+      "onTime": 88,
+      "color": "#f87171",
+      "reasons": [],
+      "warnings": [
+        "🔴 Tire pressure 67 PSI — TRUCK-007 blowout risk",
+        "🔴 Inspection overdue — 32 days",
+        "🔴 HOS insufficient — 1.8hrs only"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Lisa Rodriguez",
+      "initials": "LR",
+      "location": "Mesa, AZ",
+      "hos": 5.4,
+      "inspection": 12,
+      "fatigue": "medium",
+      "status": "available",
+      "truck": "TRUCK-009",
+      "health": "warning",
+      "score": 72,
+      "onTime": 95,
+      "color": "#a78bfa",
+      "reasons": [
+        "HOS 5.4hrs ✓",
+        "Inspection 12 days ago ✓",
+        "El Paso return 45%"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Marcus Johnson",
+      "initials": "MJ",
+      "location": "Scottsdale, AZ",
+      "hos": 9.1,
+      "inspection": 3,
+      "fatigue": "low",
+      "status": "available",
+      "truck": "TRUCK-015",
+      "health": "healthy",
+      "score": 91,
+      "onTime": 96,
+      "color": "#4ade80",
+      "reasons": [
+        "Inspection 3 days ago ✓",
+        "Tires nominal 89 PSI ✓",
+        "Engine no faults ✓",
+        "Return load 52% from Denver",
+        "Fatigue: low ✓"
+      ]
+    }
+  ],
+  "INITIAL_LOADS": [
+    {
+      "id": 306,
+      "pickup": "Mesa, AZ",
+      "delivery": "Los Angeles, CA",
+      "deadline": "Tomorrow 10:00 AM",
+      "priority": "high",
+      "rate": 3200,
+      "miles": 372,
+      "cargo": "Auto Parts",
+      "weight": 35000,
+      "status": "needs_input",
+      "candidates": [
+        1,
+        3
+      ],
+      "returnProb": 82,
+      "tag": "NEEDS INPUT"
+    },
+    {
+      "id": 307,
+      "pickup": "Chandler, AZ",
+      "delivery": "Houston, TX",
+      "deadline": "Tomorrow 4:00 PM",
+      "priority": "high",
+      "rate": 3650,
+      "miles": 1178,
+      "cargo": "Chemical Supplies",
+      "weight": 44000,
+      "status": "blocked",
+      "driverId": 2,
+      "returnProb": 68,
+      "blockReason": "TRUCK-007 critical tire pressure 67 PSI — blowout risk on highway",
+      "tag": "BLOCKED",
+      "company": "ABC"
+    },
+    {
+      "id": 308,
+      "pickup": "Phoenix, AZ",
+      "delivery": "Denver, CO",
+      "deadline": "Tomorrow 12:00 PM",
+      "priority": "medium",
+      "rate": 2980,
+      "miles": 601,
+      "cargo": "Electronics",
+      "weight": 39000,
+      "status": "ready",
+      "driverId": 4,
+      "returnProb": 52,
+      "hosWarning": true,
+      "tag": "READY"
+    },
+    {
+      "id": 303,
+      "pickup": "Phoenix, AZ",
+      "delivery": "Dallas, TX",
+      "deadline": "Today 8:00 PM",
+      "priority": "high",
+      "rate": 2840,
+      "miles": 1067,
+      "cargo": "Industrial Eq.",
+      "weight": 42000,
+      "status": "assigned",
+      "driverId": 1,
+      "returnProb": 71,
+      "company": "ABC"
+    },
+    {
+      "id": 302,
+      "pickup": "Tucson, AZ",
+      "delivery": "El Paso, TX",
+      "deadline": "Today 11:30 PM",
+      "priority": "medium",
+      "rate": 1920,
+      "miles": 544,
+      "cargo": "Retail Goods",
+      "weight": 38000,
+      "status": "assigned",
+      "driverId": 3,
+      "returnProb": 45
+    }
+  ],
+  "USER_SHIPMENTS": [
+    {
+      "id": "SHP-1042",
+      "loadId": 303,
+      "origin": "Chicago, IL",
+      "dest": "Dallas, TX",
+      "status": "In Transit",
+      "eta": "Jun 3",
+      "driver": "Raj P.",
+      "driverPhone": "(602) 555-0112",
+      "commodity": "Electronics",
+      "weight": "18,400 lbs",
+      "amount": "$3,240",
+      "trailer": "Dry Van",
+      "bol": "BOL-88421",
+      "truck": "TRUCK-012",
+      "pickupDate": "May 30, 2026",
+      "deliveryDate": "Jun 3, 2026",
+      "distance": "921 mi",
+      "events": [
+        {
+          "label": "Order Confirmed",
+          "time": "May 29 · 10:14 AM",
+          "done": true
+        },
+        {
+          "label": "Picked up in Chicago, IL",
+          "time": "May 30 · 7:42 AM",
+          "done": true
+        },
+        {
+          "label": "Departed Chicago Terminal",
+          "time": "May 30 · 9:15 AM",
+          "done": true
+        },
+        {
+          "label": "In Transit — Kansas City, MO",
+          "time": "May 31 · 2:30 PM",
+          "done": true
+        },
+        {
+          "label": "Estimated Arrival Dallas, TX",
+          "time": "Jun 3 · by 5:00 PM",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "SHP-1039",
+      "loadId": 302,
+      "origin": "Atlanta, GA",
+      "dest": "Miami, FL",
+      "status": "Delivered",
+      "eta": "May 28",
+      "driver": "Lisa R.",
+      "driverPhone": "(480) 555-0291",
+      "commodity": "Retail",
+      "weight": "12,200 lbs",
+      "amount": "$2,100",
+      "trailer": "Dry Van",
+      "bol": "BOL-87903",
+      "truck": "TRUCK-009",
+      "pickupDate": "May 25, 2026",
+      "deliveryDate": "May 28, 2026",
+      "distance": "662 mi",
+      "events": [
+        {
+          "label": "Order Confirmed",
+          "time": "May 24 · 3:05 PM",
+          "done": true
+        },
+        {
+          "label": "Picked up in Atlanta, GA",
+          "time": "May 25 · 8:00 AM",
+          "done": true
+        },
+        {
+          "label": "In Transit — Gainesville, FL",
+          "time": "May 26 · 11:45 AM",
+          "done": true
+        },
+        {
+          "label": "Arrived Miami, FL",
+          "time": "May 28 · 9:22 AM",
+          "done": true
+        },
+        {
+          "label": "Delivered — Signed by R. Lopez",
+          "time": "May 28 · 10:55 AM",
+          "done": true
+        }
+      ]
+    },
+    {
+      "id": "SHP-1034",
+      "loadId": null,
+      "origin": "Los Angeles, CA",
+      "dest": "Phoenix, AZ",
+      "status": "Delivered",
+      "eta": "May 22",
+      "driver": "Marcus J.",
+      "driverPhone": "(480) 555-0338",
+      "commodity": "Automotive",
+      "weight": "22,000 lbs",
+      "amount": "$1,840",
+      "trailer": "Flatbed",
+      "bol": "BOL-87214",
+      "truck": "TRUCK-015",
+      "pickupDate": "May 20, 2026",
+      "deliveryDate": "May 22, 2026",
+      "distance": "372 mi",
+      "events": [
+        {
+          "label": "Order Confirmed",
+          "time": "May 19 · 1:00 PM",
+          "done": true
+        },
+        {
+          "label": "Picked up in Los Angeles, CA",
+          "time": "May 20 · 6:30 AM",
+          "done": true
+        },
+        {
+          "label": "Cleared Inspection — Blythe, CA",
+          "time": "May 21 · 10:10 AM",
+          "done": true
+        },
+        {
+          "label": "Delivered — Phoenix, AZ",
+          "time": "May 22 · 2:48 PM",
+          "done": true
+        },
+        {
+          "label": "POD Uploaded",
+          "time": "May 22 · 3:15 PM",
+          "done": true
+        }
+      ]
+    },
+    {
+      "id": "SHP-1028",
+      "loadId": null,
+      "origin": "Seattle, WA",
+      "dest": "Denver, CO",
+      "status": "Delivered",
+      "eta": "May 15",
+      "driver": "Sandra R.",
+      "driverPhone": "(206) 555-0462",
+      "commodity": "Industrial",
+      "weight": "14,600 lbs",
+      "amount": "$2,680",
+      "trailer": "Dry Van",
+      "bol": "BOL-86540",
+      "truck": "TRK-22",
+      "pickupDate": "May 12, 2026",
+      "deliveryDate": "May 15, 2026",
+      "distance": "1,321 mi",
+      "events": [
+        {
+          "label": "Order Confirmed",
+          "time": "May 11 · 9:00 AM",
+          "done": true
+        },
+        {
+          "label": "Picked up in Seattle, WA",
+          "time": "May 12 · 7:15 AM",
+          "done": true
+        },
+        {
+          "label": "In Transit — Boise, ID",
+          "time": "May 13 · 12:00 PM",
+          "done": true
+        },
+        {
+          "label": "In Transit — Salt Lake City, UT",
+          "time": "May 14 · 8:40 AM",
+          "done": true
+        },
+        {
+          "label": "Delivered — Denver, CO",
+          "time": "May 15 · 11:55 AM",
+          "done": true
+        }
+      ]
+    }
+  ],
+  "COMPANIES": [
+    {
+      "Company": "PDG",
+      "Code": "ABC",
+      "Name": "ABC CO. LTD.",
+      "Type": "RET",
+      "Address": "1028 QUEEN ST WEST",
+      "City": "TORONTO",
+      "Province": "ON",
+      "Postal": "M6J 1H6",
+      "Country": "CANADA",
+      "Phone": "(416) 554-8744",
+      "Fax": "(416) 944-9849",
+      "Contact": "Mr Andrews",
+      "Email": "",
+      "Salesrep": "TFB",
+      "Termcode": "N30",
+      "Balance": 212254.38,
+      "Crlimit": 456000,
+      "Debtor": true,
+      "onHold": false,
+      "holdReason": "",
+      "Rec-Status": true,
+      "Strdat": "1998-09-02",
+      "LastShipDate": "2026-05-19",
+      "LastContDate": "2000-07-29",
+      "acctClass": "MFG",
+      "annSales": 250000000,
+      "numEmployees": 150,
+      "whouseSize": 300000,
+      "Rec-Type": "LTL",
+      "Hazmat": false,
+      "Pod": true,
+      "Appt-Rqd": true,
+      "poslat": 43.644093,
+      "poslon": -79.420039,
+      "webSite": "www.camerabar.ca",
+      "orders": [
+        {
+          "id": "#307",
+          "loadId": 307,
+          "route": "Chandler, AZ → Houston, TX",
+          "commodity": "Chemical Supplies",
+          "weight": "44,000 lbs",
+          "rate": 3650,
+          "pickupDate": "2026-09-03",
+          "deliveryDate": "2026-09-05",
+          "status": "Blocked",
+          "invoiceStatus": "Pending",
+          "invoiceAmount": 3650
+        },
+        {
+          "id": "#303",
+          "loadId": 303,
+          "route": "Phoenix, AZ → Dallas, TX",
+          "commodity": "Industrial Eq.",
+          "weight": "42,000 lbs",
+          "rate": 2840,
+          "pickupDate": "2026-09-02",
+          "deliveryDate": "2026-09-02",
+          "status": "In Transit",
+          "invoiceStatus": "Paid",
+          "invoiceAmount": 3650
+        },
+        {
+          "id": "ORD-8801",
+          "route": "Toronto, ON → Chicago, IL",
+          "commodity": "Automotive Parts",
+          "weight": "18,400 lbs",
+          "rate": 2850,
+          "pickupDate": "2026-07-02",
+          "deliveryDate": "2026-07-04",
+          "status": "Delivered",
+          "invoiceStatus": "Paid",
+          "invoiceAmount": 2850
+        },
+        {
+          "id": "ORD-8814",
+          "route": "Toronto, ON → Detroit, MI",
+          "commodity": "Automotive Parts",
+          "weight": "22,000 lbs",
+          "rate": 1980,
+          "pickupDate": "2026-07-15",
+          "deliveryDate": "2026-07-16",
+          "status": "Delivered",
+          "invoiceStatus": "Paid",
+          "invoiceAmount": 1980
+        },
+        {
+          "id": "ORD-8830",
+          "route": "Toronto, ON → Cleveland, OH",
+          "commodity": "General",
+          "weight": "15,200 lbs",
+          "rate": 2210,
+          "pickupDate": "2026-07-28",
+          "deliveryDate": "2026-07-30",
+          "status": "Delivered",
+          "invoiceStatus": "Outstanding",
+          "invoiceAmount": 2210
+        },
+        {
+          "id": "ORD-8852",
+          "route": "Toronto, ON → Buffalo, NY",
+          "commodity": "Automotive Parts",
+          "weight": "9,800 lbs",
+          "rate": 980,
+          "pickupDate": "2026-08-05",
+          "deliveryDate": "2026-08-06",
+          "status": "Delivered",
+          "invoiceStatus": "Overdue",
+          "invoiceAmount": 980
+        },
+        {
+          "id": "ORD-8879",
+          "route": "Toronto, ON → Pittsburgh, PA",
+          "commodity": "Retail Goods",
+          "weight": "26,500 lbs",
+          "rate": 3140,
+          "pickupDate": "2026-08-20",
+          "deliveryDate": "2026-08-22",
+          "status": "In Transit",
+          "invoiceStatus": "Pending",
+          "invoiceAmount": 3140
+        },
+        {
+          "id": "ORD-8901",
+          "route": "Toronto, ON → Columbus, OH",
+          "commodity": "Automotive Parts",
+          "weight": "19,000 lbs",
+          "rate": 2460,
+          "pickupDate": "2026-05-17",
+          "deliveryDate": "2026-05-19",
+          "status": "Delivered",
+          "invoiceStatus": "Paid",
+          "invoiceAmount": 2460
+        }
+      ]
+    },
+    {
+      "Company": "PDG",
+      "Code": "111",
+      "Name": "ABC Trucking",
+      "Type": "TRA",
+      "Address": "123 Mainstreet",
+      "City": "Toronto",
+      "Province": "ON",
+      "Postal": "L5M3J7",
+      "Country": "",
+      "Phone": "123",
+      "Fax": "fax",
+      "Contact": "admin contact",
+      "Email": "em",
+      "Salesrep": "JWA",
+      "Termcode": "30H",
+      "Balance": 1300.58,
+      "Crlimit": 2000,
+      "Debtor": true,
+      "onHold": true,
+      "holdReason": "hold reason",
+      "Rec-Status": true,
+      "Strdat": "2016-10-31",
+      "LastShipDate": "2026-06-09",
+      "LastContDate": "2016-10-31",
+      "acctClass": "class",
+      "annSales": 0,
+      "numEmployees": 0,
+      "whouseSize": 1,
+      "Rec-Type": "LTL",
+      "Hazmat": true,
+      "Pod": true,
+      "Appt-Rqd": true,
+      "poslat": 43.68285,
+      "poslon": -79.29947,
+      "webSite": "",
+      "orders": [
+        {
+          "id": "ORD-4401",
+          "route": "Toronto, ON → Hamilton, ON",
+          "commodity": "General Freight",
+          "weight": "6,200 lbs",
+          "rate": 420,
+          "pickupDate": "2026-06-05",
+          "deliveryDate": "2026-06-05",
+          "status": "Delivered",
+          "invoiceStatus": "Paid",
+          "invoiceAmount": 420
+        },
+        {
+          "id": "ORD-4415",
+          "route": "Toronto, ON → Kitchener, ON",
+          "commodity": "General Freight",
+          "weight": "5,100 lbs",
+          "rate": 800.58,
+          "pickupDate": "2026-06-09",
+          "deliveryDate": "2026-06-09",
+          "status": "Delivered",
+          "invoiceStatus": "Outstanding",
+          "invoiceAmount": 800.58
+        },
+        {
+          "id": "ORD-4430",
+          "route": "Toronto, ON → London, ON",
+          "commodity": "General Freight",
+          "weight": "4,800 lbs",
+          "rate": 500,
+          "pickupDate": "2026-06-09",
+          "deliveryDate": "2026-06-09",
+          "status": "Delivered",
+          "invoiceStatus": "Overdue",
+          "invoiceAmount": 500
+        }
+      ]
+    },
+    {
+      "Company": "PDG",
+      "Code": "ABCKY",
+      "Name": "ABC Automotive",
+      "Type": "AM",
+      "Address": "145 Corporate Drive",
+      "City": "London",
+      "Province": "KY",
+      "Postal": "40741",
+      "Country": "USA",
+      "Phone": "",
+      "Fax": "",
+      "Contact": "",
+      "Email": "",
+      "Salesrep": "",
+      "Termcode": "",
+      "Balance": 0,
+      "Crlimit": 0,
+      "Debtor": false,
+      "onHold": false,
+      "holdReason": "",
+      "Rec-Status": true,
+      "Strdat": "2019-07-22",
+      "LastShipDate": "2025-12-01",
+      "LastContDate": "2019-07-22",
+      "acctClass": "",
+      "annSales": 0,
+      "numEmployees": 0,
+      "whouseSize": 0,
+      "Rec-Type": "LTL",
+      "Hazmat": false,
+      "Pod": false,
+      "Appt-Rqd": false,
+      "poslat": 37.139312,
+      "poslon": -84.182778,
+      "webSite": "",
+      "orders": [
+        {
+          "id": "ORD-2201",
+          "route": "London, KY → Lexington, KY",
+          "commodity": "Automotive",
+          "weight": "3,200 lbs",
+          "rate": 310,
+          "pickupDate": "2025-11-28",
+          "deliveryDate": "2025-12-01",
+          "status": "Delivered",
+          "invoiceStatus": "Paid",
+          "invoiceAmount": 310
+        }
+      ]
+    }
+  ]
+}

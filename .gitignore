@@ -43,3 +43,5 @@ backend/marketplace.db
 
 # Environment variables / secrets
 .env
+.venv/
+backend/tms.db

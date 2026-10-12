@@ -1,10 +1,59 @@
 import { useState } from 'react';
 import TpLogo from '../components/TpLogo';
 import { useFleetState } from '../hooks/useFleetState';
+import { useFreshIds, useLiveData, useNow } from '../hooks/useLiveData';
+import { PORTAL_CUSTOMER, fmtDate, fmtDateTime, fmtWindow, timeAgo } from '../api/tms';
+import { USER_SHIPMENTS } from '../data/mockData';
 
-const STATUS_COLOR  = { 'In Transit': 'var(--blue-brand)', 'Delivered': 'var(--green)', 'Pending': 'var(--amber)', 'Invoiced ✓': 'var(--green)' };
-const STATUS_BG     = { 'In Transit': 'rgba(28,142,232,0.1)', 'Delivered': 'rgba(16,185,129,0.1)', 'Pending': 'rgba(245,158,11,0.1)', 'Invoiced ✓': 'rgba(16,185,129,0.1)' };
-const STATUS_BORDER = { 'In Transit': 'rgba(28,142,232,0.25)', 'Delivered': 'rgba(16,185,129,0.25)', 'Pending': 'rgba(245,158,11,0.25)', 'Invoiced ✓': 'rgba(16,185,129,0.25)' };
+const STATUS_COLOR  = { 'In Transit': 'var(--blue-brand)', 'Delivered': 'var(--green)', 'Pending': 'var(--amber)', 'Invoiced ✓': 'var(--green)', 'Booked': 'var(--amber)', 'At Pickup': 'var(--amber)', 'At Delivery': 'var(--blue-brand)' };
+const STATUS_BG     = { 'In Transit': 'rgba(28,142,232,0.1)', 'Delivered': 'rgba(16,185,129,0.1)', 'Pending': 'rgba(245,158,11,0.1)', 'Invoiced ✓': 'rgba(16,185,129,0.1)', 'Booked': 'rgba(245,158,11,0.1)', 'At Pickup': 'rgba(245,158,11,0.1)', 'At Delivery': 'rgba(28,142,232,0.1)' };
+const STATUS_BORDER = { 'In Transit': 'rgba(28,142,232,0.25)', 'Delivered': 'rgba(16,185,129,0.25)', 'Pending': 'rgba(245,158,11,0.25)', 'Invoiced ✓': 'rgba(16,185,129,0.25)', 'Booked': 'rgba(245,158,11,0.25)', 'At Pickup': 'rgba(245,158,11,0.25)', 'At Delivery': 'rgba(28,142,232,0.25)' };
+
+// What the customer sees while the agent is working on their shipment.
+const AGENT_NOTE = {
+  awaiting_carrier:  'We are checking with the carrier',
+  awaiting_customer: 'Waiting for your reply',
+  needs_human:       'Our operations team is on it',
+};
+
+const SOURCE_NOTE = { carrier: 'Confirmed by the carrier', agent: 'Updated by our team', customer: 'From you' };
+
+// Turns a shipment from the TMS API into the shape the cards below use.
+function toCard(s) {
+  const done = s.milestones.map(m => ({
+    label: m.label, time: fmtDateTime(m.event_time), done: true,
+    note: SOURCE_NOTE[m.source],
+  }));
+  const reached = new Set(s.milestones.map(m => m.code));
+  const pending = [];
+  if (s.status !== 'Delivered') {
+    if (!reached.has('ARRCONSIGNEE')) {
+      pending.push({ label: `Arrival in ${s.destination}`, time: `Appointment ${fmtWindow(s.delivery_appt_start, s.delivery_appt_end)}`, done: false });
+    }
+    pending.push({ label: 'Delivery', time: 'Pending', done: false });
+  }
+  return {
+    id: s.id,
+    origin: s.origin,
+    dest: s.destination,
+    status: s.status,
+    driver: s.driver_name || 'Driver not assigned',
+    commodity: s.commodity,
+    weight: s.weight_lbs ? `${s.weight_lbs.toLocaleString()} lbs` : '',
+    eta: fmtDate(s.delivery_appt_start),
+    amount: s.amount || '',
+    trailer: s.trailer,
+    bol: s.bol,
+    truck: s.truck_id || 'Not assigned yet',
+    carrier: s.carrier_name,
+    pickupWindow: fmtWindow(s.pickup_appt_start, s.pickup_appt_end),
+    deliveryWindow: fmtWindow(s.delivery_appt_start, s.delivery_appt_end),
+    agentStatus: s.agent_status,
+    updatedAt: s.updated_at,
+    events: [...done, ...pending],
+    live: true,
+  };
+}
 
 function BookPane() {
   const { bookShipment } = useFleetState();
@@ -174,21 +223,28 @@ function BookPane() {
   );
 }
 
-function ShipPane() {
-  const { userShipments } = useFleetState();
+function ShipPane({ shipments, live }) {
   const [selectedId, setSelectedId] = useState(null);
   const toggle = id => setSelectedId(prev => prev === id ? null : id);
+  const now = useNow(1000);
+  // Cards the agent changes while you watch glow once.
+  const fresh = useFreshIds(live.connected ? shipments : null, s => `${s.id}|${s.updatedAt || ''}`);
 
   return (
     <div>
-      <div className="sf-header">
-        <div className="sf-title">My Shipments</div>
-        <div className="sf-sub">{userShipments.length} shipments · click any row to view details</div>
+      <div className="sf-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div className="sf-title">My Shipments</div>
+          <div className="sf-sub">{shipments.length} shipments · click any row to view details</div>
+        </div>
+        {live.connected
+          ? <span className="live-pill on">Live tracking, updated {timeAgo(new Date(live.updatedAt).toISOString(), now)}</span>
+          : <span className="live-pill off">Showing sample data. Live tracking is unavailable.</span>}
       </div>
-      {userShipments.map(s => {
+      {shipments.map(s => {
         const isOpen = selectedId === s.id;
         return (
-          <div key={s.id} className={`mship-card${isOpen ? ' open' : ''}`}>
+          <div key={s.id} className={`mship-card${isOpen ? ' open' : ''}${fresh.has(s.id) ? ' mship-fresh' : ''}`}>
             {/* Row */}
             <div className="mship-item" onClick={() => toggle(s.id)}>
               <div className="mship-icon" style={{ background: STATUS_BG[s.status], border: `1px solid ${STATUS_BORDER[s.status]}` }}>
@@ -198,6 +254,9 @@ function ShipPane() {
                 <div className="mship-id">{s.id}</div>
                 <div className="mship-route">{s.origin} → {s.dest}</div>
                 <div className="mship-meta">{s.driver} · {s.commodity} · {s.weight} · ETA {s.eta}</div>
+                {s.agentStatus && AGENT_NOTE[s.agentStatus] && (
+                  <div className="mship-agent">{AGENT_NOTE[s.agentStatus]}</div>
+                )}
               </div>
               <div className="mship-right">
                 <div className="mship-amount">{s.amount}</div>
@@ -213,7 +272,16 @@ function ShipPane() {
               <div className="mship-detail">
                 {/* Info grid */}
                 <div className="mship-detail-grid">
-                  {[
+                  {(s.live ? [
+                    { label: 'BOL Number',      value: s.bol },
+                    { label: 'Truck',           value: s.truck },
+                    { label: 'Trailer Type',    value: s.trailer },
+                    { label: 'Driver',          value: s.driver },
+                    { label: 'Pickup Window',   value: s.pickupWindow },
+                    { label: 'Delivery Window', value: s.deliveryWindow },
+                    { label: 'Carrier',         value: s.carrier },
+                    { label: 'Freight Value',   value: s.amount },
+                  ] : [
                     { label: 'BOL Number',    value: s.bol },
                     { label: 'Truck',         value: s.truck },
                     { label: 'Trailer Type',  value: s.trailer },
@@ -222,7 +290,7 @@ function ShipPane() {
                     { label: 'Delivery Date', value: s.deliveryDate },
                     { label: 'Distance',      value: s.distance },
                     { label: 'Freight Value', value: s.amount },
-                  ].map(({ label, value }) => (
+                  ]).map(({ label, value }) => (
                     <div key={label} className="mship-detail-cell">
                       <div className="mship-detail-label">{label}</div>
                       <div className="mship-detail-value">{value}</div>
@@ -241,7 +309,7 @@ function ShipPane() {
                       </div>
                       <div className="mship-tl-body">
                         <div className={`mship-tl-label${ev.done ? '' : ' pending'}`}>{ev.label}</div>
-                        <div className="mship-tl-time">{ev.time}</div>
+                        <div className="mship-tl-time">{ev.time}{ev.note && <span className="mship-tl-source">{ev.note}</span>}</div>
                       </div>
                     </div>
                   ))}
@@ -410,8 +478,29 @@ const TABS = [
   { id: 'profile', label: 'My Profile', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
 ];
 
+const MOCK_IDS = new Set(USER_SHIPMENTS.map(s => s.id));
+
 export default function UserDashboard({ onLogout }) {
   const [tab, setTab] = useState('book');
+  const { userShipments } = useFleetState();
+
+  // Live shipments and account details from the TMS API, refreshed every few seconds.
+  const live = useLiveData(`/api/shipments?customer_code=${PORTAL_CUSTOMER}`, 3000);
+  const account = useLiveData(`/api/customers/${PORTAL_CUSTOMER}`, 60000);
+  const connected = Boolean(live.data) && !live.error;
+
+  // Live data when the API answers; the old sample data when it doesn't.
+  // Shipments booked in this browser session are kept either way.
+  const bookedHere = userShipments.filter(s => !MOCK_IDS.has(s.id));
+  const shipments = connected
+    ? [...bookedHere, ...live.data.map(toCard)]
+    : userShipments;
+
+  const active = shipments.filter(s => s.status !== 'Delivered').length;
+  const total = shipments.reduce((sum, s) => sum + (Number(String(s.amount).replace(/[^0-9.]/g, '')) || 0), 0);
+  const contact = (connected && account.data?.contact) || 'John Smith';
+  const company = (connected && account.data?.name) || 'Smith Industries';
+  const initials = contact.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#05080F', display: 'flex', flexDirection: 'column', zIndex: 7000 }}>
@@ -428,19 +517,19 @@ export default function UserDashboard({ onLogout }) {
         <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginRight: 20 }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 10, color: 'rgba(241,245,249,0.3)', textTransform: 'uppercase', letterSpacing: 1 }}>Active Shipments</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#10B981' }}>2</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#10B981' }}>{active}</div>
           </div>
           <div style={{ width: 1, height: 28, background: 'var(--border)' }} />
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 10, color: 'rgba(241,245,249,0.3)', textTransform: 'uppercase', letterSpacing: 1 }}>Total Shipped</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--amber)' }}>$24,180</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--amber)' }}>${total.toLocaleString('en-US')}</div>
           </div>
         </div>
         <div className="unav-user">
-          <div className="unav-avatar">JS</div>
-          <div className="unav-name">John Smith</div>
+          <div className="unav-avatar">{initials}</div>
+          <div className="unav-name">{contact}</div>
           <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-          <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>Smith Industries</div>
+          <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{company}</div>
         </div>
         <button className="unav-signout" onClick={onLogout}>Sign Out</button>
       </div>
@@ -458,7 +547,7 @@ export default function UserDashboard({ onLogout }) {
       {/* Content */}
       <div className="udash-content">
         {tab === 'book'    && <BookPane />}
-        {tab === 'track'   && <ShipPane />}
+        {tab === 'track'   && <ShipPane shipments={shipments} live={{ connected, updatedAt: live.updatedAt }} />}
         {tab === 'quotes'  && <QuotePane />}
         {tab === 'profile' && <ProfilePane onLogout={onLogout} />}
       </div>
