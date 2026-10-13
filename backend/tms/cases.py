@@ -37,12 +37,16 @@ CATEGORIES = {
     "other":           "Something else",
 }
 Category = Literal["status_update", "truck_number", "change_request", "quote_question", "other"]
-Status = Literal["new", "in_progress", "awaiting_carrier", "awaiting_customer", "needs_human", "resolved"]
-OPEN = ("new", "in_progress", "awaiting_carrier", "awaiting_customer", "needs_human")
+Status = Literal["new", "customer_replied", "in_progress", "awaiting_carrier", "awaiting_customer",
+                 "needs_human", "resolved"]
+OPEN = ("new", "customer_replied", "in_progress", "awaiting_carrier", "awaiting_customer", "needs_human")
+# Statuses the agent picks up: a brand-new case, or one where the customer answered the agent.
+READY_FOR_AGENT = ("new", "customer_replied")
 
 # What the customer sees for each status.
 CUSTOMER_STATUS = {
     "new": "We're looking into it",
+    "customer_replied": "We're looking into it",
     "in_progress": "We're looking into it",
     "awaiting_carrier": "Checking with the carrier",
     "awaiting_customer": "Waiting for your reply",
@@ -97,6 +101,10 @@ def _case(conn, case_id) -> dict:
     c["customer_status"] = CUSTOMER_STATUS[c["status"]]
     c["customer_name"] = (_row(conn, "SELECT name FROM customers WHERE code = ?", c["customer_code"]) or {}).get("name")
     c["messages"] = _messages(conn, case_id)
+    c["record_type"] = "shipment" if c["shipment_id"] else "order"
+    c["record_id"] = c["shipment_id"] or c["order_id"]
+    answers = [m["form_response"] for m in c["messages"] if m["author_type"] == "customer" and m["form_response"]]
+    c["latest_form_response"] = answers[-1] if answers else None
     return c
 
 
@@ -293,9 +301,11 @@ def portal_reply(case_id: str, body: PortalReplyIn, background: BackgroundTasks)
         _add_message(conn, case_id, "customer", (contact or {}).get("contact") or "Customer",
                      text, form_response=body.form_response)
         if c["status"] == "awaiting_customer":
-            _set_status(conn, c, "in_progress", "Customer replied")
+            # Hand the case back to the agent: it fetches new and customer_replied cases.
+            _set_status(conn, c, "customer_replied", "Customer replied")
         kind, ent_id = _entity(c)
-        _note(conn, kind, ent_id, "customer_replied", f"Customer replied in {case_id}: {text}", c["subject"], author=(contact or {}).get("contact") or "Customer")
+        _note(conn, kind, ent_id, "customer_replied", f"Customer replied in {case_id}: {text}", c["subject"],
+              author=(contact or {}).get("contact") or "Customer")
         conn.commit()
         c = _case(conn, case_id)
     finally:
@@ -307,14 +317,17 @@ def portal_reply(case_id: str, body: PortalReplyIn, background: BackgroundTasks)
 # ── cases (read for all; write for agent and ops) ────────────────────
 
 @cases.get("", summary="Cases, newest first, filtered by status or record")
-def list_cases(status: Optional[str] = Query(None, description="One status, or 'open' for all unresolved"),
+def list_cases(status: Optional[str] = Query(None, description="A status, several separated by commas "
+                                            "(e.g. new,customer_replied), or 'open' for all unresolved"),
                shipment_id: Optional[str] = None, order_id: Optional[str] = None,
                customer_code: Optional[str] = None, limit: int = Query(50, le=200)):
     sql, args = "SELECT id FROM cases WHERE 1=1", []
     if status == "open":
         sql += f" AND status IN {OPEN}"
     elif status:
-        sql, args = sql + " AND status = ?", args + [status]
+        wanted = [x.strip() for x in status.split(",") if x.strip()]
+        sql += f" AND status IN ({', '.join('?' for _ in wanted)})"
+        args += wanted
     for field, value in (("shipment_id", shipment_id), ("order_id", order_id), ("customer_code", customer_code)):
         if value:
             sql, args = sql + f" AND {field} = ?", args + [value]
@@ -376,12 +389,12 @@ def open_case(body: CaseIn, background: BackgroundTasks, response: Response):
 
 
 @cases.post("/{case_id}/claim", dependencies=[Depends(require_api_key)],
-            summary="Take a new case so no one else works it (new → in_progress)")
+            summary="Take a case so no one else works it (new or customer_replied → in_progress)")
 def claim_case(case_id: str):
     conn = get_db()
     try:
         cur = conn.execute("UPDATE cases SET status = 'in_progress', updated_at = ? "
-                           "WHERE id = ? AND status = 'new'", (stamp(), case_id))
+                           f"WHERE id = ? AND status IN {READY_FOR_AGENT}", (stamp(), case_id))
         if cur.rowcount == 0:
             c = _case(conn, case_id)
             raise HTTPException(409, f"{case_id} is already {c['status'].replace('_', ' ')}.")

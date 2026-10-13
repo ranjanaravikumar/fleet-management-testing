@@ -43,6 +43,7 @@ export const SHIPMENT_STATUS = {
 
 export const CASE_STATUS = {
   new:               { label: 'New',                  tone: 'tms-s-bad' },
+  customer_replied:  { label: 'Customer replied',     tone: 'tms-s-agent' },
   in_progress:       { label: 'Agent working',        tone: 'tms-s-agent' },
   awaiting_carrier:  { label: 'Waiting on carrier',   tone: 'tms-s-warn' },
   awaiting_customer: { label: 'Waiting on customer',  tone: 'tms-s-warn' },
