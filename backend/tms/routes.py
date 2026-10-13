@@ -476,6 +476,30 @@ def check_shipment(shipment_id: str,
     finally:
         conn.close()
 
+class ApplyFixesIn(BaseModel):
+    source_ref: Optional[str] = Field(None, description="e.g. the case ID, saved with the change")
+
+
+@tools.post("/shipments/{shipment_id}/apply-fixes", dependencies=[Depends(require_api_key)],
+            summary="Apply the safe fixes the shipment check found in other TMS records")
+def apply_shipment_fixes(shipment_id: str, body: Optional[ApplyFixesIn] = None):
+    result = check_shipment(shipment_id, sender=None)
+    fixes = [f for f in result["internal_fixes"] if f["fix_class"] == "auto"]
+    if fixes:
+        changes = {f["field"]: f["value"] for f in fixes}
+        conn = get_db()
+        try:
+            s = _shipment_or_404(conn, shipment_id)
+            sets = ", ".join(f"{k} = :{k}" for k in changes)
+            conn.execute(f"UPDATE shipments SET {sets}, updated_at = :u WHERE id = :id",
+                         {**changes, "u": stamp(), "id": shipment_id})
+            _note(conn, "shipment", shipment_id, "update",
+                  f"Filled in from TMS records. {fixes[0]['evidence']} ({_diff(s, changes)})",
+                  body.source_ref if body else None)
+            conn.commit()
+        finally:
+            conn.close()
+    return {"applied": {f["field"]: f["value"] for f in fixes}, "shipment": get_shipment(shipment_id)}
 
 @tools.get("/orders/{order_id}/check", summary="Data-quality findings for one order")
 def check_order(order_id: str):
