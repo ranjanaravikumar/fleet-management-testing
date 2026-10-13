@@ -40,6 +40,8 @@ set DEMO_CARRIER_EMAIL=your-demo-carrier-inbox@gmail.com
 | `TMS_API_KEY` | `dev-key-change-me` | Required in the `X-API-Key` header for anything that changes data |
 | `DEMO_CUSTOMER_EMAIL` | placeholder | The demo customer's address. The agent only trusts emails from it |
 | `DEMO_CARRIER_EMAIL` | placeholder | Where "contact the carrier" emails go: your carrier inbox |
+| `QUBI_WEBHOOK_URL` | empty | A Qubi trigger's callback URL. When set, new cases and customer replies are sent to Qubi straight away |
+| `QUBI_TRIGGER_SECRET` | empty | Sent as the `X-Trigger-Secret` header with each webhook |
 | `TMS_RESET_ON_START` | `false` | `true` reloads demo data at every start (use on Render) |
 | `CORS_ORIGINS` | `http://localhost:5173` | Web pages allowed to call the API, comma-separated |
 
@@ -62,6 +64,17 @@ Reading is open. Writing needs `X-API-Key`.
 | `GET /api/customers/{code}`, `/api/loads/{id}`, `/api/drivers/{id}` | Related records |
 | `GET /api/notes`, `POST /api/notes` 🔑 | The activity log; every change is also logged automatically |
 | `GET /api/stats` | Counts and open problems for the Agent Activity page |
+| `GET /api/portal/shipments`, `GET /api/portal/orders` | What the customer portal shows, with alerts and open cases |
+| `POST /api/portal/cases` | Customer opens a case from the portal (no key; a repeat click returns the open case) |
+| `POST /api/portal/cases/{id}/messages` | Customer replies in a case, or fills in a form the agent sent |
+| `GET /api/cases?status=new` | Cases: `new`, `open`, `resolved`, or any single status; filter by `shipment_id` or `order_id` |
+| `GET /api/cases/{id}` | One case with its conversation |
+| `POST /api/cases` 🔑 | Open a case from another channel, e.g. a future email workflow (`"channel": "email"`) |
+| `POST /api/cases/{id}/claim` 🔑 | Take a new case so no one else works it |
+| `POST /api/cases/{id}/messages` 🔑 | Agent or ops writes to the customer; can also set `status` and send a `form` |
+| `PATCH /api/cases/{id}` 🔑 | Change a case's status; also shows on the shipment or order |
+| `GET /api/cases/webhook-status` | Whether the Qubi webhook is set up, and recent attempts |
+| `GET /api/auth/check` 🔑 | Checks an API key (used by the operations sign-in) |
 | `POST /api/admin/reset` 🔑 | Back to the demo starting state |
 | `GET /api/agent-tools/shipments/{id}/check?sender=` | **What should the agent do?** For a shipment |
 | `GET /api/agent-tools/orders/{id}/check` | Data problems in one order |
@@ -80,38 +93,40 @@ branches on:
 
 ## The five demo acts
 
-Times are relative to the last reset, so reset before each demo run.
+Times are relative to the last reset, so reset before each demo run. Each act
+starts with the customer opening a case in the portal.
 
-| Act | Record | Check says | What the agent does |
-|---|---|---|---|
-| 1. Missing milestone | `SHP-1042` Chicago → Dallas | `ask_carrier`: arrival and delivery overdue | Emails the carrier; on reply, posts `ARRCONSIGNEE` and `DELV`; status becomes Delivered; confirms to customer |
-| 2. Fixes it itself | `SHP-2048` Phoenix → Denver | `fix_internally`: TRUCK-015 and Marcus Johnson, via load 308 | PATCHes the shipment, replies with the truck number |
-| 3. Guardrail | `SHP-2051`, customer ABC Trucking | `needs_human`: on hold, unusable email, unknown sender | Doesn't act; creates an ActionHub task |
-| 4. Missing data | Order `SHP45342` | `ask_customer`: no pallet dimensions, so no quote | Fixes formats, asks the customer for dimensions, records the reply, sends the quote to a person |
-| 5. Data sweep | All 106 orders | 242 findings: 221 auto, 18 for a person, 3 for the customer | Applies the safe fixes, reports the rest |
+| Act | Record | Customer does | Check says | Agent does |
+|---|---|---|---|---|
+| 1. Missing milestone | `SHP-1042` Chicago → Dallas | Sees "Delivery not confirmed yet", clicks **Get an update** | `ask_carrier`: arrival and delivery overdue | Emails the carrier; on the reply, records arrival and delivery and resolves the case |
+| 2. Fixes it itself | `SHP-2048` Phoenix → Denver | **Need the truck number** | `fix_internally`: TRUCK-015 and Marcus Johnson, via load 308 | Fills in the shipment and answers |
+| 3. Guardrail | `SHP-2048` | **Change a delivery detail** | Always a person's call | Hands to ActionHub; ABC Trucking's on-hold `SHP-2051` is another example |
+| 4. Missing data | Order `SHP45342` | **Question about my quote** | `ask_customer`: no pallet details, so no quote | Asks with a form, records the answer, sends pricing to a person |
+| 5. Data sweep | All 106 orders | Nothing | 311 findings: 221 safe to fix, 15 need the customer, 12 need a person, 63 for information | Applies the safe fixes and reports the rest |
 
-## Live screens
+## The TMS screens
 
-Two pages read this API every few seconds, so the agent's changes appear
-without refreshing:
+Open http://localhost:5173/Load-Lorry/tms and choose:
 
-- **Customer portal, My Shipments tab:** Northfield Auto Supply's shipments,
-  with the timeline, an agent status line ("We are checking with the carrier"),
-  and a one-time glow on any card that changes.
-- **Admin, Agent Activity:** the live feed of notes, shipments needing action,
-  and order data-quality counts.
+- **Customer portal:** Northfield Auto Supply's shipments and orders, alerts
+  like "Delivery not confirmed yet", and **Get help**, which opens a case. The
+  agent's replies appear in the case conversation on the same page.
+- **Operations console** (sign in with the API key): shipments with what the
+  agent found, the Cases queue (reply as a person, change status), order data
+  quality, and the agent's activity log.
 
-They call `http://localhost:8000` by default. To point them somewhere else
-(Render later), create `.env.local` in the project root and restart `npm run dev`:
+Every screen refreshes itself every few seconds. To point them at another
+backend (Render later), create `.env.local` in the project root and restart
+`npm run dev`:
 
 ```
 VITE_TMS_API_URL=https://your-backend-address
 ```
 
-If the API can't be reached, the portal falls back to the old sample data and
-says so, and the Agent Activity page explains how to start the backend.
+The older pages (landing page, Fleet Command Center, the previous portal and
+Agent Activity page) are unchanged and still work.
 
-The full guide for building the agent in Qubi is in `docs/qubi-build-guide.md`.
+The guide for building the agent in Qubi is in `docs/qubi-build-guide.md`.
 
 ## Tips for Qubi
 

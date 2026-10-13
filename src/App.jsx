@@ -19,6 +19,7 @@ import LoadMarketplace from './pages/LoadMarketplace';
 import Companies from './pages/Companies';
 import CompanyProfile from './pages/CompanyProfile';
 import AgentActivity from './pages/AgentActivity';
+import TmsApp from './tms/TmsApp';
 
 export default function App() {
   const [view, setView] = useState(() => sessionStorage.getItem('tp-view') ?? 'landing');
@@ -36,6 +37,9 @@ export default function App() {
     // On login land on /dispatch; on refresh keep the current admin sub-page
     if (view === 'admin-dash' && location.pathname === '/') navigate('/dispatch', { replace: true });
   }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The new TMS demo (customer portal + operations console) lives under /tms.
+  if (location.pathname === '/tms' || location.pathname.startsWith('/tms/')) return <TmsApp />;
 
   return (
     <>

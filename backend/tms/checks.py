@@ -194,11 +194,16 @@ def check_order(o: dict) -> list[dict]:
     if status and status != normalized:
         add("status", "Non-standard status spelling", status, normalized, "auto")
 
-    # Pallet dimensions and quote.
-    dims_missing = not (o["skid_dims"] or "").strip()
-    if dims_missing:
-        add("skid_dims", "Pallet dimensions missing", "", None, "ask_customer")
+    # Pallet dimensions and quote. "unknown" counts as missing. It only blocks
+    # anything when there's no quote yet; otherwise it's just worth knowing.
+    dims_raw = (o["skid_dims"] or "").strip()
+    dims_missing = dims_raw.lower() in ("", "unknown")
     quote = (o["quote"] or "").strip()
+    if dims_missing:
+        if quote:
+            add("skid_dims", "Pallet dimensions not recorded", dims_raw, None, "info")
+        else:
+            add("skid_dims", "Pallet dimensions missing", dims_raw, None, "ask_customer")
     if not quote:
         add("quote", "No quote" + (" (blocked by missing pallet dimensions)" if dims_missing
                                    else " (needs pricing)"),

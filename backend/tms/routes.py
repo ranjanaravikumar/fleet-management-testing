@@ -125,13 +125,14 @@ def lookup(ref: str = Query(..., description="Shipment ID, BOL or order number, 
 
 @router.get("/shipments", summary="All shipments with their milestones (optionally one customer's)")
 def list_shipments(customer_code: Optional[str] = None):
-    sql, args = "SELECT * FROM shipments", []
+    sql, args = ("SELECT s.*, c.name AS customer_name FROM shipments s "
+                 "LEFT JOIN customers c ON c.code = s.customer_code"), []
     if customer_code:
-        sql, args = sql + " WHERE customer_code = ?", [customer_code]
+        sql, args = sql + " WHERE s.customer_code = ?", [customer_code]
     conn = get_db()
     try:
         out = []
-        for s in _rows(conn, sql + " ORDER BY pickup_appt_start DESC", *args):
+        for s in _rows(conn, sql + " ORDER BY s.pickup_appt_start DESC", *args):
             ms = _milestones(conn, s["id"])
             out.append({**s, "milestones": ms, "last_milestone": ms[-1] if ms else None})
         return out
@@ -445,6 +446,12 @@ def stats():
         }
     finally:
         conn.close()
+
+
+@router.get("/auth/check", dependencies=[Depends(require_api_key)],
+            summary="Is this API key valid? (used by the ops sign-in)")
+def auth_check():
+    return {"ok": True}
 
 
 @router.get("/meta/milestone-codes", summary="Milestone codes and labels")

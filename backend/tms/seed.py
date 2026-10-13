@@ -232,9 +232,25 @@ def reset_demo() -> dict:
                  r["origin_country"], r["dest_country"], r["Quote"], r["skid_dims"], None),
             )
 
+        # ── One past, resolved case, so the portal shows some history ─
+        conn.execute(
+            "INSERT INTO cases (id, customer_code, shipment_id, order_id, channel, category, subject, "
+            "status, sender_email, external_ref, created_at, updated_at, resolved_at) "
+            "VALUES ('CASE-1001', 'NFAS', 'SHP-1039', NULL, 'portal', 'status_update', "
+            "'Where is my shipment? (SHP-1039)', 'resolved', NULL, NULL, "
+            "'2026-05-27T09:10:00-07:00', '2026-05-27T09:12:00-07:00', '2026-05-27T09:12:00-07:00')")
+        for author_type, name, body, t in [
+            ("customer", "Maria Lopez", "Is SHP-1039 still on track for delivery tomorrow?", "09:10"),
+            ("system", "TruckerPath", "Case CASE-1001 opened. Our team is on it; updates will appear here.", "09:10"),
+            ("agent", "TruckerPath Support", "Yes. SHP-1039 passed Gainesville, FL yesterday and is on "
+             "schedule for delivery in Miami tomorrow morning.", "09:12"),
+        ]:
+            conn.execute("INSERT INTO case_messages (case_id, author_type, author_name, body, created_at) "
+                         "VALUES ('CASE-1001', ?, ?, ?, ?)", (author_type, name, body, f"2026-05-27T{t}:00-07:00"))
+
         conn.commit()
         counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-                  for t in ("customers", "drivers", "loads", "shipments", "milestones", "orders")}
+                  for t in ("customers", "drivers", "loads", "shipments", "milestones", "orders", "cases")}
     finally:
         conn.close()
     return {"reset_at": iso(t0), "counts": counts}

@@ -7,117 +7,129 @@ words used here; match each step to the closest node in the editor.
 ## How the pieces connect
 
 ```
-Customer inbox ──email──► Qubi workflow A ──HTTP──► TMS API (your backend)
-                               │                         ▲
-                               ├──email──► Carrier inbox │
-                               │                         │
-Carrier / customer reply ──► Qubi workflow B ──HTTP──────┘
-                               │
-                               └──task──► ActionHub (a person)
-
-Schedule ──► Qubi workflow C (data sweep) ──HTTP──► TMS API
+Customer portal "Get help" ──► Case in the TMS ──webhook──► Qubi workflow A
+                                     ▲                          │
+                                     │  replies in the case     ├──email──► Carrier inbox
+                                     └──────────────────────────┤
+Carrier's reply email ──────────────► Qubi workflow B ──────────┘
+Customer replies in the portal ──webhook──► Qubi workflow A (customer_replied)
+ActionHub (a person) ◄── anything the agent must not decide alone
 ```
 
-Qubi does the language work: reading emails, deciding what they're about,
-writing replies. The TMS API does the exact work: finding records, checking
-milestones and data, saving changes. Keep it that way. If you find yourself
-asking the AI "is this overdue?", call the check endpoint instead.
+Customers raise issues in the portal, which creates a **case**. Qubi does the
+language work: deciding what to say, reading the carrier's email. The TMS API
+does the exact work: checks, records, and the case conversation the customer
+sees. Customer email can be added later as another way to open a case
+(see "Later: customer email" at the end); nothing else changes.
 
 ## Before you build: confirm these in Qubi
 
 | Question | Where to look | Why it matters |
 |---|---|---|
-| Can a workflow start when an email arrives? | Job Triggers, Connect | Workflows A and B start this way. If not, poll the inbox on a schedule |
-| Is there an HTTP / REST step? | The **+** node list, IntegrationHub | Every TMS call |
-| Is there an AI step that can return JSON? | The **+** node list, Agents | Reading emails |
-| Can a step branch on a value? | The **+** node list; see the "Branch: route on a value" demo | Choosing the path |
-| Can it send email? | Connect, IntegrationHub | Replies and carrier requests |
-| Can it create an ActionHub task? | ActionHub, the "Invoice exception approval" demo | Handoffs to a person |
-| Where do secrets go? | Connect, Admin | The API key |
+| Can a trigger start a workflow from a webhook? | Integration Hub, Triggers (it can: "Webhook (provider pushes)" with a callback URL and secret) | Workflow A starts when the TMS reports a new case |
+| Is there an HTTP / REST step, or can we build a TMS connector? | The **+** node list, Connector Builder | Every TMS call |
+| Is there an AI step that can return JSON? | The **+** node list, Agents | Writing replies, reading the carrier's email |
+| Can a step branch on a value? | The **+** node list; the "Branch: route on a value" demo | Choosing the path |
+| Can it send and read Gmail? | Connectors, Gmail (16 actions) | Carrier emails and replies |
+| Can it create an ActionHub task? | ActionHub; the "Invoice exception approval" demo | Handoffs to a person |
 
 ## Settings every workflow uses
 
 | Name | Value |
 |---|---|
 | `TMS_URL` | Your ngrok address while testing, e.g. `https://purse-giving-railroad.ngrok-free.dev`; your Render address later |
-| `TMS_API_KEY` | The same value as `TMS_API_KEY` in the backend terminal |
+| `TMS_API_KEY` | The same value as `TMS_API_KEY` in the backend's `.env` |
 
-Send these headers on **every** HTTP call:
+Headers on **every** HTTP call:
 
 ```
 ngrok-skip-browser-warning: 1
-X-API-Key: {TMS_API_KEY}          (only needed for writes, harmless on reads)
+X-API-Key: {TMS_API_KEY}          (needed for writes, harmless on reads)
 Content-Type: application/json    (on POST and PATCH)
 ```
 
-## Workflow A: a customer email arrives
+## Connecting the TMS to Qubi's trigger
 
-**Trigger:** new email in the agent's inbox whose subject doesn't start with `Re:`.
+1. In Qubi, create the trigger for workflow A and copy its **callback URL** and
+   **secret** (shown under the workflow's Delivery section).
+2. Add them to the backend's `.env` and restart the backend:
+   ```
+   QUBI_WEBHOOK_URL=<callback URL>
+   QUBI_TRIGGER_SECRET=<secret>
+   ```
+3. Check it at `GET /api/cases/webhook-status`; after a test case, `recent`
+   should show `HTTP 200`.
 
-**Step A1. Read the email (AI step).** Instructions:
-
-```
-You read customer emails for a freight company. From the email below,
-return only this JSON, nothing else:
-
-{
-  "reference": the shipment, BOL or order number mentioned, exactly as
-               written (e.g. "SHP-1042", "BOL-88421", "SHP45342"), or null,
-  "intent": one of "status", "truck_number", "quote", "change_request", "other",
-  "summary": one short sentence describing what the customer wants
-}
-
-"change_request" means they ask us to change something: an address,
-a date, an appointment, a price.
-
-Email from: {sender}
-Subject: {subject}
-Body: {body}
-```
-
-**Step A2. Find the record.** `GET {TMS_URL}/api/lookup?ref={reference}`
-- 404, or no reference → reply asking for the shipment or order number. Stop.
-- Answer `type` is `shipment` or `order` → continue with its `id`.
-
-**Step A3. Log the email.** `POST {TMS_URL}/api/notes`
+The TMS sends this body, with the secret in the `X-Trigger-Secret` header:
 
 ```json
-{"entity_type": "shipment", "entity_id": "{id}", "action": "email_received",
- "message": "{summary}", "source_ref": "{subject}"}
+{"event": "case.created", "case_id": "CASE-1002", "case": { ...the full case, with messages... }}
 ```
 
-**Step A4. Check what to do.**
-- Shipment: `GET {TMS_URL}/api/agent-tools/shipments/{id}/check?sender={sender}`
-- Order: `GET {TMS_URL}/api/agent-tools/orders/{id}/check`
+`event` is `case.created` for a new case, or `case.customer_replied` when the
+customer answers in the portal. Workflow A branches on it first.
 
-**Step A5. Branch on `recommendation`.** Branch on `intent` first: a
-`change_request` always goes to the **needs_human** branch, because changing
-commitments is a person's call.
+**No webhook yet?** Use a polling trigger that calls `GET /api/cases?status=new`
+every 15 to 30 seconds and runs workflow A for each case returned.
+
+## Workflow A: a case arrives
+
+**Step A1. Claim it.** `POST {TMS_URL}/api/cases/{case_id}/claim`.
+A `409` means someone already took it: stop.
+
+**Step A2. Check what to do.**
+- Shipment case: `GET /api/agent-tools/shipments/{shipment_id}/check`
+- Order case: `GET /api/agent-tools/orders/{order_id}/check`
+
+**Step A3. Branch.** First on the case `category`:
+
+| category | Go to |
+|---|---|
+| `change_request` | **needs_human**, always. Changing a commitment is a person's call |
+| `truck_number`, `status_update`, `quote_question`, `other` | The check's `recommendation` |
+
+Then on `recommendation`:
 
 | recommendation | Steps |
 |---|---|
-| `answer_from_tms` | `GET /api/shipments/{id}`, then AI writes the reply from that data (prompt below), then send it, then log `replied_customer` |
-| `fix_internally` | For each item in `internal_fixes`: `PATCH /api/shipments/{id}` with `{"<field>": "<value>", "reason": "<evidence>", "source_ref": "<subject>"}`. Then answer as above |
-| `ask_carrier` | Email the carrier (template below), then `PATCH /api/shipments/{id}` with `{"agent_status": "awaiting_carrier", "reason": "Asked the carrier to confirm <what>", "source_ref": "<subject>"}`, then send the customer a short "we're checking" reply |
-| `ask_customer` (orders) | Apply the `auto` issues with one `PATCH /api/orders/{id}`, then email the customer asking for the missing items, then `PATCH` with `{"agent_status": "awaiting_customer", ...}` |
-| `needs_human` | Create an ActionHub task with the email, the check `summary` and the `guardrails`; `PATCH` with `{"agent_status": "needs_human", ...}`; log `handoff`. Do **not** reply to the customer |
+| `answer_from_tms` | `GET /api/shipments/{id}`; AI writes the answer (prompt below); post it with `"status": "resolved"` |
+| `fix_internally` | For each `internal_fixes` item: `PATCH /api/shipments/{id}` with `{"<field>": "<value>", "reason": "<evidence>", "source_ref": "{case_id}"}`. Then answer as above |
+| `ask_carrier` | Email the carrier (template below). Post to the customer with `"status": "awaiting_carrier"` |
+| `ask_customer` (orders) | Apply the `auto` issues with one `PATCH /api/orders/{id}`. Post a message with a `form` asking for the missing fields, with `"status": "awaiting_customer"` |
+| `needs_human` | Create an ActionHub task with the case and the check's `summary` and `guardrails`. Post to the customer with `"status": "needs_human"` |
+
+**Posting to the customer** (shown in the portal straight away):
+
+```
+POST {TMS_URL}/api/cases/{case_id}/messages
+{"author_type": "agent", "body": "<text>", "status": "<new status>"}
+```
+
+Asking for details, as in Act 4:
+
+```json
+{"author_type": "agent", "status": "awaiting_customer",
+ "body": "To price this order we need your pallet details.",
+ "form": {"fields": [{"name": "pallets", "label": "Number of pallets"},
+                     {"name": "dims", "label": "Pallet size, L x W x H in inches"}]}}
+```
 
 **Reply writer (AI step):**
 
 ```
-Write a short, friendly email reply from Northfield's freight team
-("TruckerPath Customer Support") to the customer below. Use only the facts
-given; never invent times, names or numbers. Under 120 words. Plain text.
+Write a short, friendly message from TruckerPath Support to the customer.
+Use only the facts given; never invent times, names or numbers.
+Under 80 words. Plain text, no greeting line, no signature.
 
-Customer's question: {summary}
+Customer asked: {category_label}, {first customer message}
 Shipment data: {shipment JSON}
 What we did: {what the workflow just did, in one sentence}
 ```
 
-**Carrier email template** (subject must keep the ID in brackets):
+**Carrier email template** (keep the shipment ID and case ID in the subject):
 
 ```
-Subject: [SHP-1042] Delivery status needed
+Subject: [SHP-1042] [CASE-1002] Delivery status needed
 
 Hello Prairie Line Freight,
 
@@ -130,20 +142,22 @@ Thank you,
 TruckerPath Operations
 ```
 
-## Workflow B: a reply arrives
+### When the customer replies (event `case.customer_replied`, Act 4)
 
-**Trigger:** new email in the agent's inbox whose subject starts with `Re:`.
+1. Read the newest customer message in the case. Its `form_response` holds
+   the fields, e.g. `{"pallets": "2", "dims": "48x40x50"}`.
+2. `PATCH /api/orders/{order_id}` with `{"skid_details": "2 pallets", "skid_dims": "48x40x50", "reason": "Customer sent pallet details", "source_ref": "{case_id}"}`.
+3. ActionHub task: "Price order {order_id}". Prices go through a person.
+4. Post: "Thanks, we've added your pallet details. Our pricing team will send
+   your quote shortly." with `"status": "needs_human"`.
 
-**Step B1. Find the record.** Take the ID from the brackets in the subject,
-then call `GET /api/lookup?ref={id}`.
+## Workflow B: the carrier replies by email
 
-**Step B2. Who replied?** If the sender is the record's `carrier_email`, follow
-the carrier path. If it's the customer's email, follow the customer path.
-Anyone else: ActionHub task.
+**Trigger:** new email in the agent's Gmail.
 
-**Carrier path (Act 1).**
-
-1. AI step:
+1. **Find the case.** Take the shipment and case IDs from the brackets in the
+   subject, then `GET /api/cases/{case_id}`.
+2. **Read the reply (AI step):**
 
    ```
    From this carrier reply, return only JSON:
@@ -158,7 +172,7 @@ Anyone else: ActionHub task.
    Reply: {body}
    ```
 
-2. If `arrived_at` is present, `POST /api/shipments/{id}/milestones`:
+3. If `arrived_at` is present, `POST /api/shipments/{id}/milestones`:
 
    ```json
    {"code": "ARRCONSIGNEE", "event_time": "{arrived_at}",
@@ -166,22 +180,12 @@ Anyone else: ActionHub task.
     "reason": "Carrier confirmed by email", "source_ref": "{subject}"}
    ```
 
-3. If `delivered_at` is present, post `DELV` the same way, with
+4. If `delivered_at` is present, post `DELV` the same way, with
    `"label": "Delivered, signed by {signed_by}"`.
-4. A `422` means a time doesn't fit the timeline. Send it to ActionHub rather
+5. A `422` means a time doesn't fit the timeline. Send it to ActionHub rather
    than guessing.
-5. `PATCH /api/shipments/{id}` with `{"clear_agent_status": true, "reason": "Resolved; confirmed to customer", ...}`.
-6. Email the customer with the reply writer: the shipment was delivered, at
-   what time, and who signed.
-
-**Customer path (Act 4).**
-
-1. AI step: pull out pallet count and dimensions, e.g. `{"skid_details": "2 pallets", "skid_dims": "48x40x50"}`.
-2. `PATCH /api/orders/{id}` with those fields, `"agent_status": "needs_human"`
-   and `"reason": "Customer sent pallet dimensions; quote needs pricing"`.
-3. ActionHub task: "Price order {id}". A person sets the price, because
-   prices go through a person.
-4. Reply to the customer: dimensions received, the quote will follow.
+6. Post to the customer, e.g. "Prairie Line Freight confirmed delivery in
+   Dallas at 2:00 PM today, signed by J. Ortiz.", with `"status": "resolved"`.
 
 ## Workflow C: data sweep (Act 5)
 
@@ -191,35 +195,50 @@ Anyone else: ActionHub task.
 2. `POST /api/agent-tools/orders/apply-safe-fixes?dry_run=false&source_ref=Scheduled data sweep`.
 3. One ActionHub task listing everything in `needs_human` (freight classes,
    impossible weights).
-4. For `ask_customer` items: one email per order asking for the missing
-   information.
+4. For `ask_customer` items: add them to the same ActionHub task for now.
+   Contacting customers proactively can come later.
 5. `POST /api/notes` with `action` `data_sweep` and a one-line summary, e.g.
-   "Fixed 221 fields on 86 orders; 18 sent to a person; 3 need the customer."
+   "Fixed 221 fields on 86 orders; 12 sent to a person; 15 need the customer."
 
 ## Approval mode
 
-Add one workflow setting, `APPROVAL_MODE`, true or false. When it's true,
-every customer email goes into an ActionHub approval task instead of being
-sent, and is sent once a person approves. Turn it on for the first demo run to
-show the safety option, then turn it off to show full speed.
+Add one workflow setting, `APPROVAL_MODE`, true or false. When it's true, the
+agent's message to the customer goes into an ActionHub approval task instead of
+being posted, and is posted once a person approves. Turn it on for the first
+demo run to show the safety option, then off to show full speed.
 
 ## Build order
 
-1. Workflow A with only the lookup and the check. Run it by hand with a pasted
-   email, and watch the calls in ngrok's inspector (http://127.0.0.1:4040).
+1. Workflow A, started by hand with a case ID: claim, check, and post a reply.
+   Watch the calls in ngrok's inspector (http://127.0.0.1:4040).
 2. Add the `answer_from_tms` and `fix_internally` branches (Act 2).
-3. Add `ask_carrier` and workflow B's carrier path (Act 1).
-4. Add `needs_human` and ActionHub (Act 3).
-5. Add the order paths (Act 4) and workflow C (Act 5).
-6. Switch the manual start to the email trigger.
+3. Connect the webhook trigger, so opening a case in the portal starts the flow.
+4. Add `ask_carrier` and workflow B (Act 1).
+5. Add `needs_human` and ActionHub (Act 3).
+6. Add the order paths and `customer_replied` (Act 4), then workflow C (Act 5).
 7. Reset (`POST /api/admin/reset`) and run all five acts start to finish.
 
 ## Testing each act
 
-| Act | Send this email to the agent's inbox, from | Expect |
+Customer portal: sign in at `/tms` and choose **Continue as customer**.
+
+| Act | In the customer portal | Expect |
 |---|---|---|
-| 1 | Customer: "Hi, was SHP-1042 delivered? It was due this morning." | Carrier gets an email; portal says "We are checking with the carrier". Reply as the carrier with times; the portal flips to Delivered and the customer gets a confirmation |
-| 2 | Customer: "What truck is SHP-2048 on? We need it for dock check-in." | Reply says TRUCK-015, driver Marcus Johnson; the portal shows the truck |
-| 3 | Any other address: "Please change the delivery address for SHP-2051." | No reply; an ActionHub task appears; Agent Activity shows the handoff |
-| 4 | Customer: "When will I get a quote for SHP45342?" | Customer is asked for dimensions; reply with them; an ActionHub pricing task appears |
-| 5 | Run workflow C | Agent Activity's "Safe to fix automatically" goes from 221 to 0 |
+| 1 | SHP-1042 shows "Delivery not confirmed yet". Click **Get an update** | Conversation says "Checking with the carrier"; the carrier gets an email. Reply as the carrier with times; the timeline fills in, the status becomes Delivered, the case is resolved |
+| 2 | SHP-2048, **Get help**, **Need the truck number** | Answer within seconds: TRUCK-015, Marcus Johnson; the Details panel fills in |
+| 3 | SHP-2048, **Get help**, **Change a delivery detail**, "Please deliver to our Mesa warehouse instead" | "Our operations team is on it"; an ActionHub task appears; the ops console Cases page shows it as Needs a person |
+| 4 | Orders and quotes, SHP45342, **Question about my quote** | A form asks for pallet details. Fill it in; an ActionHub pricing task appears |
+| 5 | Run workflow C | Ops console, Orders: "Safe to fix automatically" goes from 221 to 0 |
+
+## Later: customer email
+
+When you want customers to email in as well:
+
+1. Connect the customer-facing Gmail in Qubi.
+2. Add a workflow: on each new email, AI reads it (reference, category,
+   message); `GET /api/lookup?ref=...` finds the record; then
+   `POST /api/cases` with `"channel": "email"`, `"sender_email"` and
+   `"external_ref"` (the email's message ID).
+3. That creates a normal case, so workflow A runs exactly as above. For email
+   cases, also send the agent's message back by email, as a reply in the
+   same thread.

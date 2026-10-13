@@ -39,6 +39,8 @@ def get_db() -> sqlite3.Connection:
 
 
 SCHEMA = """
+DROP TABLE IF EXISTS case_messages;
+DROP TABLE IF EXISTS cases;
 DROP TABLE IF EXISTS notes;
 DROP TABLE IF EXISTS milestones;
 DROP TABLE IF EXISTS shipments;
@@ -158,6 +160,35 @@ CREATE TABLE notes (
     created_at      TEXT NOT NULL
 );
 
+CREATE TABLE cases (
+    id              TEXT PRIMARY KEY,
+    customer_code   TEXT REFERENCES customers(code),
+    shipment_id     TEXT REFERENCES shipments(id),
+    order_id        TEXT REFERENCES orders(id),
+    channel         TEXT NOT NULL,           -- portal | email | phone
+    category        TEXT NOT NULL,
+    subject         TEXT NOT NULL,
+    status          TEXT NOT NULL,           -- new | in_progress | awaiting_carrier | awaiting_customer | needs_human | resolved
+    sender_email    TEXT,                    -- email cases: who wrote in
+    external_ref    TEXT,                    -- email cases: message ID, for threading replies
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    resolved_at     TEXT
+);
+
+CREATE TABLE case_messages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id         TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    author_type     TEXT NOT NULL,           -- customer | agent | ops | system
+    author_name     TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    form            TEXT,                    -- JSON: fields the agent asks the customer to fill in
+    form_response   TEXT,                    -- JSON: what the customer filled in
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX idx_cases_status ON cases(status);
+CREATE INDEX idx_case_messages_case ON case_messages(case_id);
 CREATE INDEX idx_milestones_shipment ON milestones(shipment_id);
 CREATE INDEX idx_notes_entity ON notes(entity_type, entity_id);
 """

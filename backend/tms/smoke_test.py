@@ -52,7 +52,13 @@ expect("Act 3 SHP-2051", check("SHP-2051", "someone@abctrucking.example.com")["r
 expect("On-time SHP-2049", check("SHP-2049", CUSTOMER)["recommendation"], "answer_from_tms")
 expect("Act 4 SHP45342", call("GET", "/api/agent-tools/orders/SHP45342/check")[1]["recommendation"], "ask_customer")
 expect("Act 5 sweep", call("GET", "/api/agent-tools/orders/data-quality")[1]["by_fix_class"],
-       {"auto": 221, "needs_human": 18, "ask_customer": 3})
+       {"auto": 221, "info": 63, "ask_customer": 15, "needs_human": 12})
+req = urllib.request.Request(BASE + "/api/portal/cases", method="POST",
+                             data=json.dumps({"shipment_id": "SHP-1042", "category": "status_update"}).encode(),
+                             headers={"Content-Type": "application/json", "ngrok-skip-browser-warning": "1"})
+with urllib.request.urlopen(req) as r:
+    expect("Portal opens a case", (r.status, json.loads(r.read())["status"]), (201, "new"))
+call("POST", "/api/admin/reset", auth=True)   # leave the demo clean
 expect("Lookup by BOL", call("GET", "/api/lookup", {"ref": "BOL-88421"})[1].get("id"), "SHP-1042")
 
 print(f"\n{sum(results)}/{len(results)} checks passed.")

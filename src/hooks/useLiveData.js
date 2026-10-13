@@ -6,13 +6,15 @@ import { tmsGet } from '../api/tms';
  * This is "polling": the page keeps asking "anything new?", so changes the
  * agent makes show up without anyone refreshing.
  *
- * Returns { data, error, updatedAt, loading }.
+ * Returns { data, error, updatedAt, loading, reload }. Call reload() after
+ * changing something, to fetch straight away instead of at the next poll.
  *  - data: the last good answer (kept even if a later request fails)
  *  - error: set while the API can't be reached
  *  - updatedAt: when the last good answer arrived (ms)
  */
 export function useLiveData(path, intervalMs = 3000, enabled = true) {
   const [state, setState] = useState({ data: null, error: null, updatedAt: null, loading: true });
+  const [nonce, setNonce] = useState(0);
   const lastJson = useRef(null);
 
   useEffect(() => {
@@ -56,9 +58,9 @@ export function useLiveData(path, intervalMs = 3000, enabled = true) {
       clearTimeout(timer);
       controller?.abort();
     };
-  }, [path, intervalMs, enabled]);
+  }, [path, intervalMs, enabled, nonce]);
 
-  return state;
+  return { ...state, reload: () => setNonce(n => n + 1) };
 }
 
 /** Re-renders every `ms` so "12 sec ago" style labels stay current. */
