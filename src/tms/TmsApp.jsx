@@ -5,7 +5,7 @@ import { TMS_API_URL } from '../api/tms';
 import { useLiveData } from '../hooks/useLiveData';
 import { PORTAL_CUSTOMER, getSession, setSession } from './lib';
 import { SideNav, Tabs, TopBar } from './ui';
-import { PortalOrder, PortalOrders, PortalShipment, PortalShipments } from './portal/PortalPages';
+import { PortalNewOrder, PortalOrder, PortalOrders, PortalShipment, PortalShipments } from './portal/PortalPages';
 import { OpsActivity, OpsCases, OpsOrders, OpsShipment, OpsShipments } from './ops/OpsPages';
 
 // ── Sign-in ──────────────────────────────────────────────────────────
@@ -133,6 +133,7 @@ export default function TmsApp() {
         <Route index element={<PortalShipments />} />
         <Route path="shipments/:id" element={<PortalShipment />} />
         <Route path="orders" element={<PortalOrders />} />
+        <Route path="orders/new" element={<PortalNewOrder />} />
         <Route path="orders/:id" element={<PortalOrder />} />
       </Route>
       <Route path="/tms/ops" element={<RequireRole role="ops"><OpsLayout /></RequireRole>}>

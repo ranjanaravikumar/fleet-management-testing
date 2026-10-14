@@ -58,6 +58,18 @@ req = urllib.request.Request(BASE + "/api/portal/cases", method="POST",
                              headers={"Content-Type": "application/json", "ngrok-skip-browser-warning": "1"})
 with urllib.request.urlopen(req) as r:
     expect("Portal opens a case", (r.status, json.loads(r.read())["status"]), (201, "new"))
+req = urllib.request.Request(BASE + "/api/portal/orders", method="POST", data=json.dumps({
+    "origin_zip": "85034", "origin_state": "arizona", "origin_country": "United States",
+    "dest_zip": "h1a0a9", "dest_country": "canada", "weight": "1,200 lbs", "pallet_count": "2 pallets"}).encode(),
+    headers={"Content-Type": "application/json", "ngrok-skip-browser-warning": "1"})
+with urllib.request.urlopen(req) as r:
+    created = json.loads(r.read())
+rq = urllib.request.Request(BASE + f"/api/agent-tools/orders/{created['order']['id']}/review", method="POST",
+                            data=json.dumps({"case_id": created["case"]["id"]}).encode(),
+                            headers={"Content-Type": "application/json", "X-API-Key": KEY, "ngrok-skip-browser-warning": "1"})
+with urllib.request.urlopen(rq) as r:
+    review = json.loads(r.read())
+expect("New order review", (review["next_step"], len(review["applied"])), ("ask_customer", 7))
 call("POST", "/api/admin/reset", auth=True)   # leave the demo clean
 expect("Lookup by BOL", call("GET", "/api/lookup", {"ref": "BOL-88421"})[1].get("id"), "SHP-1042")
 

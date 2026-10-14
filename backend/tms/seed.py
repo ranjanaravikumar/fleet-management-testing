@@ -221,16 +221,20 @@ def reset_demo() -> dict:
         # The CSV has no customer column; for the demo every order belongs to NFAS.
         with open(ORDERS_CSV, newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
+        cols = ["id", "customer_code", "origin_zip", "dest_zip", "weight_lbs", "status", "freight_class",
+                "base_rate_per_mile_cwt", "fuel_surcharge_percent", "accessorial_charges", "driver_id",
+                "vendor_id", "created_at", "last_updated_timestamp", "skid_details", "is_stackable",
+                "is_urgent", "delivery_appointment", "origin_country", "dest_country", "quote", "skid_dims",
+                "source"]
+        sql = f"INSERT INTO orders ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})"
         for r in rows:
-            conn.execute(
-                "INSERT INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (r["shipment_id"], "NFAS", r["origin_zip"], r["dest_zip"], r["weight_lbs"],
-                 r["status"], r["freight_class"], r["base_rate_per_mile_cwt"],
-                 r["fuel_surcharge_percent"], r["accessorial_charges"], r["driver_id"],
-                 r["vendor_id"], r["created_at"], r["last_updated_timestamp"], r["skid_details"],
-                 r["is_stackable"], r["is_urgent"], r["delivery_appointment"],
-                 r["origin_country"], r["dest_country"], r["Quote"], r["skid_dims"], None),
-            )
+            conn.execute(sql, (
+                r["shipment_id"], "NFAS", r["origin_zip"], r["dest_zip"], r["weight_lbs"],
+                r["status"], r["freight_class"], r["base_rate_per_mile_cwt"],
+                r["fuel_surcharge_percent"], r["accessorial_charges"], r["driver_id"],
+                r["vendor_id"], r["created_at"], r["last_updated_timestamp"], r["skid_details"],
+                r["is_stackable"], r["is_urgent"], r["delivery_appointment"],
+                r["origin_country"], r["dest_country"], r["Quote"], r["skid_dims"], "csv"))
 
         # ── One past, resolved case, so the portal shows some history ─
         conn.execute(

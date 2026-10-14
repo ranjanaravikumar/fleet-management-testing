@@ -14,7 +14,7 @@ from backend.matching import eligibility_filter, net_value_rank
 from backend.database import create_tables
 from backend.tms import db as tms_db
 from backend.tms.routes import router as tms_router, tools as agent_tools_router
-from backend.tms.cases import portal as portal_router, cases as cases_router
+from backend.tms.cases import portal as portal_router, cases as cases_router, intake as intake_router
 from backend.tms.seed import reset_demo
 
 
@@ -44,6 +44,7 @@ app.include_router(tms_router)
 app.include_router(agent_tools_router)
 app.include_router(portal_router)
 app.include_router(cases_router)
+app.include_router(intake_router)
 
 
 @app.post("/marketplace/match", response_model=MatchResponse)

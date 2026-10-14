@@ -363,6 +363,29 @@ def update_order(order_id: str, body: OrderUpdate):
     return get_order(order_id)
 
 
+class ApproveFixIn(BaseModel):
+    field: Literal["origin_country", "dest_country", "origin_zip", "dest_zip", "origin_state", "dest_state",
+                   "weight_lbs", "pallet_count", "skid_dims", "freight_class"]
+    value: str
+    approved_by: str = "Operations"
+
+
+@router.post("/orders/{order_id}/approve-fix", dependencies=[Depends(require_api_key)],
+             summary="A person approves a suggested fix (e.g. a likely country or a freight class)")
+def approve_fix(order_id: str, body: ApproveFixIn):
+    conn = get_db()
+    try:
+        o = _order_or_404(conn, order_id)
+        conn.execute(f"UPDATE orders SET {body.field} = ?, last_updated_timestamp = ? WHERE id = ?",
+                     (body.value, stamp(), order_id))
+        _note(conn, "order", order_id, "update",
+              f"Approved suggestion ({_diff(o, {body.field: body.value})})", None, author=body.approved_by)
+        conn.commit()
+    finally:
+        conn.close()
+    return get_order(order_id)
+
+
 # ── notes (the agent's activity log) ─────────────────────────────────
 
 class NoteIn(BaseModel):
@@ -476,6 +499,7 @@ def check_shipment(shipment_id: str,
     finally:
         conn.close()
 
+
 class ApplyFixesIn(BaseModel):
     source_ref: Optional[str] = Field(None, description="e.g. the case ID, saved with the change")
 
@@ -500,6 +524,7 @@ def apply_shipment_fixes(shipment_id: str, body: Optional[ApplyFixesIn] = None):
         finally:
             conn.close()
     return {"applied": {f["field"]: f["value"] for f in fixes}, "shipment": get_shipment(shipment_id)}
+
 
 @tools.get("/orders/{order_id}/check", summary="Data-quality findings for one order")
 def check_order(order_id: str):

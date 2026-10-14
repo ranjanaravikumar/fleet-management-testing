@@ -146,7 +146,12 @@ CREATE TABLE orders (
     dest_country            TEXT,
     quote                   TEXT,
     skid_dims               TEXT,
-    agent_status            TEXT
+    agent_status            TEXT,
+    origin_state            TEXT,
+    dest_state              TEXT,
+    pallet_count            TEXT,
+    commodity               TEXT,
+    source                  TEXT NOT NULL DEFAULT 'csv'   -- csv (sample data) | portal (entered by a customer)
 );
 
 CREATE TABLE notes (

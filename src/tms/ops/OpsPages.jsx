@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useFreshIds, useLiveData, useNow } from '../../hooks/useLiveData';
 import { fmtDateTime, fmtWindow, timeAgo } from '../../api/tms';
 import { ApiDown, CaseStatus, CaseThread, LiveNote, PageHeader, ShipmentStatus, Timeline } from '../ui';
-import { NOTE_ACTION, RECOMMENDATION } from '../lib';
+import { NOTE_ACTION, RECOMMENDATION, api, getSession } from '../lib';
 
 function Recommendation({ rec }) {
   const r = RECOMMENDATION[rec] || { label: rec, tone: 'tms-s-muted' };
@@ -268,17 +268,41 @@ export function OpsCases() {
 // ── Orders and data quality ──────────────────────────────────────────
 
 const CLASS_LABEL = {
+  suggested: { label: 'Suggested, needs approval', tone: 'tms-s-agent' },
   auto: { label: 'Safe to fix automatically', tone: 'tms-s-info' },
   ask_customer: { label: 'Needs the customer', tone: 'tms-s-warn' },
   needs_human: { label: 'Needs a person', tone: 'tms-s-bad' },
   info: { label: 'For information', tone: 'tms-s-muted' },
 };
 
+// Fields a person can approve a suggested value for.
+const APPROVABLE = new Set(['origin_country', 'dest_country', 'origin_zip', 'dest_zip', 'origin_state',
+  'dest_state', 'weight_lbs', 'pallet_count', 'skid_dims', 'freight_class']);
+const GROUPS = ['suggested', 'needs_human', 'ask_customer', 'auto', 'info'];
+
 export function OpsOrders() {
   const dq = useLiveData('/api/agent-tools/orders/data-quality', 5000);
-  const [cls, setCls] = useState('needs_human');
+  const [cls, setCls] = useState('suggested');
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
   const by = dq.data?.by_fix_class || {};
   const issues = (dq.data?.issues || []).filter(i => i.fix_class === cls);
+  const canApprove = i => (i.fix_class === 'suggested' || i.fix_class === 'needs_human')
+    && i.suggested != null && APPROVABLE.has(i.field);
+
+  async function approve(i) {
+    const key = `${i.order_id}-${i.field}`;
+    setBusy(key); setError('');
+    try {
+      await api.post(`/api/orders/${i.order_id}/approve-fix`,
+        { field: i.field, value: i.suggested, approved_by: getSession()?.name || 'Operations' }, { auth: true });
+      dq.reload();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy('');
+    }
+  }
 
   return (
     <>
@@ -286,22 +310,23 @@ export function OpsOrders() {
         <LiveNote live={dq} />
       </PageHeader>
       <ApiDown live={dq} />
+      {error && <div className="tms-error" role="alert">{error}</div>}
       <dl className="tms-metrics">
-        {['auto', 'ask_customer', 'needs_human', 'info'].map(k => (
+        {GROUPS.map(k => (
           <div key={k} className="tms-metric"><dt>{CLASS_LABEL[k].label}</dt><dd>{dq.data ? (by[k] || 0) : '–'}</dd></div>
         ))}
       </dl>
       <div className="tms-panel" style={{ overflowX: 'auto' }}>
         <div className="tms-panel-h">
           <div className="tms-filters" role="group" aria-label="Show problems">
-            {['needs_human', 'ask_customer', 'auto', 'info'].map(k => (
+            {GROUPS.map(k => (
               <button key={k} className={cls === k ? 'on' : ''} aria-pressed={cls === k} onClick={() => setCls(k)}>{CLASS_LABEL[k].label}</button>
             ))}
           </div>
           <span className="tms-sub">{issues.length} problems</span>
         </div>
         <table className="tms-table">
-          <thead><tr><th>Order</th><th>Field</th><th>Problem</th><th>Current value</th><th>Suggested</th></tr></thead>
+          <thead><tr><th>Order</th><th>Field</th><th>Problem</th><th>Current value</th><th>Suggested</th><th /></tr></thead>
           <tbody>
             {issues.slice(0, 150).map((i, n) => (
               <tr key={`${i.order_id}-${i.field}-${n}`}>
@@ -310,6 +335,12 @@ export function OpsOrders() {
                 <td>{i.problem}</td>
                 <td>{i.current === '' ? <span className="tms-sub">empty</span> : i.current}</td>
                 <td>{i.suggested ?? <span className="tms-sub">None</span>}</td>
+                <td>
+                  {canApprove(i) && (
+                    <button className="tms-btn small secondary" disabled={busy === `${i.order_id}-${i.field}`}
+                            onClick={() => approve(i)}>Approve</button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

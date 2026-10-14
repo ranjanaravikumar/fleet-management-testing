@@ -11,6 +11,8 @@ QUBI_TRIGGER_SECRET). Without those settings, Qubi can poll GET /api/cases?statu
 """
 import json
 import os
+import random
+import re
 import urllib.request
 from collections import deque
 from typing import Literal, Optional
@@ -24,6 +26,7 @@ from backend.tms.db import get_db, iso, now, stamp
 
 portal = APIRouter(prefix="/api/portal", tags=["Customer portal"])
 cases = APIRouter(prefix="/api/cases", tags=["Cases"])
+intake = APIRouter(prefix="/api/agent-tools", tags=["Agent tools"])
 
 AGENT = "SMART API Agent"
 QUBI_WEBHOOK_URL = os.environ.get("QUBI_WEBHOOK_URL", "").strip()
@@ -35,8 +38,9 @@ CATEGORIES = {
     "change_request":  "Change a delivery detail",
     "quote_question":  "Question about my quote",
     "other":           "Something else",
+    "new_order":       "New order review",
 }
-Category = Literal["status_update", "truck_number", "change_request", "quote_question", "other"]
+Category = Literal["status_update", "truck_number", "change_request", "quote_question", "other", "new_order"]
 Status = Literal["new", "customer_replied", "in_progress", "awaiting_carrier", "awaiting_customer",
                  "needs_human", "resolved"]
 OPEN = ("new", "customer_replied", "in_progress", "awaiting_carrier", "awaiting_customer", "needs_human")
@@ -243,10 +247,12 @@ def portal_orders(customer_code: str = "NFAS"):
     try:
         rows = _rows(conn, "SELECT * FROM orders WHERE customer_code = ? ORDER BY created_at DESC",
                      customer_code)
+        entered = [o for o in rows if o["source"] == "portal"]
         featured = [o for o in rows if o["id"] in FEATURED_ORDERS]
-        recent = [o for o in rows if o["id"] not in FEATURED_ORDERS][:PORTAL_ORDER_COUNT - len(featured)]
+        recent = [o for o in rows if o["id"] not in FEATURED_ORDERS and o["source"] != "portal"]
+        recent = recent[:max(0, PORTAL_ORDER_COUNT - len(featured))]
         out = []
-        for o in featured + recent:
+        for o in entered + featured + recent:
             amount = checks._num(o["quote"]) if (o["quote"] or "").strip() else None
             out.append({**o, "quote_status": f"Quoted ${amount:,.2f}" if amount is not None else "Quote pending",
                         "open_case": _open_case_summary(conn, "order_id", o["id"])})
@@ -450,3 +456,185 @@ def update_case(case_id: str, body: CaseUpdate):
         return _case(conn, case_id)
     finally:
         conn.close()
+
+
+# ── New orders from the portal, and the agent's one-step review ──────
+
+class PortalOrderIn(BaseModel):
+    customer_code: str = "NFAS"
+    origin_zip: str = Field(..., max_length=20)
+    origin_state: str = Field("", max_length=40)
+    origin_country: str = Field("", max_length=40)
+    dest_zip: str = Field(..., max_length=20)
+    dest_state: str = Field("", max_length=40)
+    dest_country: str = Field("", max_length=40)
+    weight: str = Field(..., max_length=30, description="As typed, e.g. '1,200 lbs'")
+    pallet_count: str = Field("", max_length=20)
+    pallet_size: str = Field("", max_length=40, description="As typed, e.g. '48 x 40 x 50 in'")
+    freight_class: str = Field("", max_length=10)
+    commodity: str = Field("", max_length=80)
+    stackable: bool = False
+    urgent: bool = False
+    appointment: bool = False
+
+
+@portal.post("/orders", status_code=201, summary="Customer enters a new order (stored exactly as typed)")
+def portal_new_order(body: PortalOrderIn, background: BackgroundTasks):
+    conn = get_db()
+    try:
+        if not _row(conn, "SELECT code FROM customers WHERE code = ?", body.customer_code):
+            raise HTTPException(404, f"Customer {body.customer_code} not found.")
+        while True:
+            order_id = f"SHP{random.randint(10000, 99999)}"
+            if not _row(conn, "SELECT id FROM orders WHERE id = ?", order_id):
+                break
+        t = stamp()
+        values = {
+            "id": order_id, "customer_code": body.customer_code,
+            "origin_zip": body.origin_zip.strip(), "origin_state": body.origin_state.strip(),
+            "origin_country": body.origin_country.strip(), "dest_zip": body.dest_zip.strip(),
+            "dest_state": body.dest_state.strip(), "dest_country": body.dest_country.strip(),
+            "weight_lbs": body.weight.strip(), "pallet_count": body.pallet_count.strip(),
+            "skid_dims": body.pallet_size.strip(), "freight_class": body.freight_class.strip(),
+            "commodity": body.commodity.strip(), "is_stackable": str(body.stackable),
+            "is_urgent": str(body.urgent), "delivery_appointment": str(body.appointment),
+            "status": "pending", "base_rate_per_mile_cwt": "0.1", "fuel_surcharge_percent": "20.0",
+            "accessorial_charges": "0.0", "driver_id": "", "vendor_id": "", "skid_details": "",
+            "quote": "", "created_at": t, "last_updated_timestamp": t, "source": "portal",
+        }
+        conn.execute(f"INSERT INTO orders ({', '.join(values)}) VALUES ({', '.join('?' for _ in values)})",
+                     list(values.values()))
+        case_id, _ = _create_case(conn, customer_code=body.customer_code, shipment_id=None, order_id=order_id,
+                                  channel="portal", category="new_order",
+                                  message="New order submitted through the portal.")
+        conn.commit()
+        order = _row(conn, "SELECT * FROM orders WHERE id = ?", order_id)
+        c = _case(conn, case_id)
+    finally:
+        conn.close()
+    background.add_task(_notify_qubi, "case.created", c)
+    return {"order": order, "case": c}
+
+
+# Fields the agent can ask the customer for, as form fields.
+FORM_FIELDS = {
+    "skid_dims": ("dims", "Pallet size, L x W x H in inches"),
+    "pallet_count": ("pallets", "Number of pallets"),
+    "weight_lbs": ("weight", "Total weight (lb)"),
+    "origin_zip": ("origin_zip", "Pickup postal code"),
+    "dest_zip": ("dest_zip", "Delivery postal code"),
+    "origin_state": ("origin_state", "Pickup state or province"),
+    "dest_state": ("dest_state", "Delivery state or province"),
+    "origin_country": ("origin_country", "Pickup country"),
+    "dest_country": ("dest_country", "Delivery country"),
+}
+FORM_TO_FIELD = {form_name: field for field, (form_name, _) in FORM_FIELDS.items()}
+LABELS = {"origin_country": "pickup country", "dest_country": "delivery country",
+          "origin_zip": "pickup postal code", "dest_zip": "delivery postal code",
+          "origin_state": "pickup state", "dest_state": "delivery state", "weight_lbs": "weight",
+          "pallet_count": "pallet count", "skid_dims": "pallet size", "freight_class": "freight class"}
+ORDER_WRITABLE = set(FORM_FIELDS) | {"freight_class"}
+
+
+def _describe_fix(a: dict) -> str:
+    """One fix in customer words: 'pickup state arizona → AZ', 'added delivery state QC'."""
+    label = LABELS.get(a["field"], a["field"])
+    to = a["to"]
+    if a["field"] == "weight_lbs":
+        to = f"{float(to):,.0f} lb"
+    elif a["field"] == "skid_dims":
+        to = f"{to.replace('x', ' x ')} in"
+    if not a["from"]:
+        return f"added the {label} ({to})"
+    if a["field"] == "weight_lbs" and re.sub(r"[\s,]", "", a["from"]).lower() == re.sub(r"[\s,]", "", to).lower():
+        return ""   # only a storage format change; nothing the customer would notice
+    return f"{label} \"{a['from']}\" → {to}"
+
+
+class ReviewIn(BaseModel):
+    case_id: Optional[str] = Field(None, description="The order's case; the review writes its message there")
+
+
+@intake.post("/orders/{order_id}/review", dependencies=[Depends(require_api_key)],
+             summary="Review an order: use the customer's answers, apply safe fixes, then ask, hand over or confirm")
+def review_order(order_id: str, body: Optional[ReviewIn] = None):
+    case_id = body.case_id if body else None
+    conn = get_db()
+    try:
+        o = _row(conn, "SELECT * FROM orders WHERE id = ?", order_id)
+        if not o:
+            raise HTTPException(404, f"Order {order_id} not found.")
+        c = _case(conn, case_id) if case_id else None
+        if c and c["order_id"] != order_id:
+            raise HTTPException(422, f"{case_id} is not about order {order_id}.")
+        applied = []
+
+        def write(changes: dict, why: str, author=AGENT):
+            nonlocal o
+            if not changes:
+                return
+            sets = ", ".join(f"{k} = ?" for k in changes)
+            conn.execute(f"UPDATE orders SET {sets}, last_updated_timestamp = ? WHERE id = ?",
+                         [*changes.values(), stamp(), order_id])
+            diff = "; ".join(f"{LABELS.get(k, k)}: {o.get(k) or 'empty'!s} → {v}" for k, v in changes.items())
+            _note(conn, "order", order_id, "update", f"{why} ({diff})", case_id, author=author)
+            o = _row(conn, "SELECT * FROM orders WHERE id = ?", order_id)
+
+        # 1. The customer's answers to an earlier question, taken as typed (then checked like everything else).
+        answers = (c or {}).get("latest_form_response") or {}
+        from_customer = {FORM_TO_FIELD[k]: str(v).strip() for k, v in answers.items()
+                         if k in FORM_TO_FIELD and str(v).strip() and str(v).strip() != (o.get(FORM_TO_FIELD[k]) or "")}
+        write(from_customer, "Customer's answers recorded", author="Customer")
+
+        # 2. Safe fixes, repeated in case one fix makes another possible (e.g. a country, then a province).
+        for _ in range(3):
+            fixes = {i["field"]: i["suggested"] for i in checks.check_order(o)
+                     if i["fix_class"] == "auto" and i["suggested"] is not None and i["field"] in ORDER_WRITABLE}
+            if not fixes:
+                break
+            for field, value in fixes.items():
+                applied.append({"field": field, "from": o.get(field) or "", "to": value})
+            write(fixes, "Order review: safe automatic fix")
+
+        # 3. What's left decides the next step. The quote waits on pricing, so it doesn't count here.
+        open_issues = [i for i in checks.check_order(o) if i["field"] != "quote" and i["fix_class"] != "info"]
+        ask = [i for i in open_issues if i["fix_class"] == "ask_customer"]
+        person = [i for i in open_issues if i["fix_class"] in ("needs_human", "suggested")]
+
+        tidy = ""
+        visible = [a for a in applied if _describe_fix(a)]
+        if visible:
+            tidy = "We tidied up a few details: " + "; ".join(_describe_fix(a) for a in visible) + ". "
+        if ask:
+            fields, seen = [], set()
+            for i in ask:
+                if i["field"] in FORM_FIELDS and i["field"] not in seen:
+                    seen.add(i["field"])
+                    fields.append({"name": FORM_FIELDS[i["field"]][0], "label": FORM_FIELDS[i["field"]][1]})
+            next_step, status = "ask_customer", "awaiting_customer"
+            needs = "; ".join(f"the {LABELS.get(i['field'], i['field'])}" if "missing" in i["problem"].lower()
+                              else f"you to check the {LABELS.get(i['field'], i['field'])} "
+                                   f"({i['problem'][0].lower() + i['problem'][1:]})" for i in ask)
+            message = (f"Thanks for order {order_id}. {tidy}To finish your order we need {needs}. "
+                       + ("Please fill in the form below." if fields else "Please reply here."))
+            form = {"fields": fields} if fields else None
+        elif person:
+            next_step, status, form = "needs_person", "needs_human", None
+            topics = list(dict.fromkeys(LABELS.get(i["field"], i["field"]) for i in person))
+            message = (f"Thanks, order {order_id} is in. {tidy}Our team is confirming the "
+                       + (" and ".join(topics) if len(topics) <= 2 else ", ".join(topics[:-1]) + " and " + topics[-1])
+                       + " and will update you here.")
+        else:
+            next_step, status, form = "confirmed", "needs_human", None
+            message = f"Thanks, order {order_id} is confirmed. {tidy}Our pricing team will send your quote shortly."
+
+        if c:
+            _add_message(conn, case_id, "agent", "TruckerPath Support", message.replace("  ", " ").strip(), form=form)
+            c = _case(conn, case_id)
+            if c["status"] != status:
+                _set_status(conn, c, status, None)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"order_id": order_id, "next_step": next_step, "applied": applied, "message": message.strip(),
+            "form": form, "open_issues": open_issues}

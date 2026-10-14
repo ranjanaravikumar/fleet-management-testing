@@ -73,6 +73,9 @@ Reading is open. Writing needs `X-API-Key`.
 | `POST /api/cases/{id}/claim` 🔑 | Take a new case so no one else works it |
 | `POST /api/cases/{id}/messages` 🔑 | Agent or ops writes to the customer; can also set `status` and send a `form` |
 | `PATCH /api/cases/{id}` 🔑 | Change a case's status; also shows on the shipment or order |
+| `POST /api/portal/orders` | Customer enters a new order, stored exactly as typed; also opens a "New order review" case |
+| `POST /api/agent-tools/orders/{id}/review` 🔑 | The agent's one-step review: uses the customer's form answers, applies safe fixes, then asks, hands over or confirms in the case |
+| `POST /api/orders/{id}/approve-fix` 🔑 | A person approves a suggestion (a likely country or state, a freight class from density) |
 | `GET /api/cases/webhook-status` | Whether the Qubi webhook is set up, and recent attempts |
 | `GET /api/auth/check` 🔑 | Checks an API key (used by the operations sign-in) |
 | `POST /api/admin/reset` 🔑 | Back to the demo starting state |
@@ -103,6 +106,25 @@ starts with the customer opening a case in the portal.
 | 3. Guardrail | `SHP-2048` | **Change a delivery detail** | Always a person's call | Hands to ActionHub; ABC Trucking's on-hold `SHP-2051` is another example |
 | 4. Missing data | Order `SHP45342` | **Question about my quote** | `ask_customer`: no pallet details, so no quote | Asks with a form, records the answer, sends pricing to a person |
 | 5. Data sweep | All 106 orders | Nothing | 311 findings: 221 safe to fix, 15 need the customer, 12 need a person, 63 for information | Applies the safe fixes and reports the rest |
+
+## New orders and validation
+
+Customers enter orders in the portal (Orders and quotes, Request a quote).
+Every field is checked when the agent reviews the order:
+
+| Check | Certain fix (applied) | Needs the customer | Needs a person |
+|---|---|---|---|
+| Country | `United States`, `U.S.A.`, `canada` → US / CA; filled in from the postal code | | A typo like `Untied States` is suggested as US, to approve |
+| Postal code | `h1a0a9` → H1A 0A9 | Not a valid ZIP or postal code | |
+| State or province | `arizona` → AZ; a Canadian province filled in from the postal code | Missing (US); the ZIP's region disagrees with the state | A typo like `Texsa` is suggested as TX, to approve |
+| Weight | `1,200 lbs` → 1200; `545 kg` → 1201.5 lb | Not a number | Outside 10 to 20,000 lb |
+| Pallets | `2 pallets` → 2 | Missing or not a whole number | More than 12 (usually a full truckload) |
+| Pallet size | `48 by 40 by 50`, `48" x 40" x 50"` → 48x40x50 | Missing, not understood, or too large | |
+| Freight class | | | Missing: suggested from density, to approve. Disagrees with density by more than one class |
+
+Fixes are applied only when the right value is certain. Likely corrections
+are offered as suggestions, which a person approves on the ops console's
+Orders page. The 106 sample orders keep their original findings.
 
 ## The TMS screens
 
