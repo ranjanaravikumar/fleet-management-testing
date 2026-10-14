@@ -5,8 +5,9 @@ Run from the project root:   python -m backend.tms.seed
 Or call:                     POST /api/admin/reset
 
 Times for live shipments are set relative to the moment of the reset,
-so the demo problems (an overdue delivery, a missing truck ID) are
-always "happening now" whenever you reset.
+so the demo situations (an overdue delivery, a missing truck ID) are
+always "happening now" whenever you reset. The TMS itself doesn't flag
+them; the plugin's detector finds them through the API.
 """
 import csv
 import json
@@ -21,14 +22,14 @@ HERE = os.path.dirname(__file__)
 MOCK_DATA = os.path.join(HERE, "fixtures", "mock_data.json")
 ORDERS_CSV = os.environ.get("TMS_ORDERS_CSV", os.path.join(HERE, "..", "..", "orders.csv"))
 
-# Demo mailboxes. Set these to the inboxes you control so replies reach you.
+# Demo mailboxes. Set these to the inboxes you control so emails reach you.
 CUSTOMER_EMAIL = os.environ.get("DEMO_CUSTOMER_EMAIL", "northfield-shipping@example.com")
 CARRIER_EMAIL = os.environ.get("DEMO_CARRIER_EMAIL", "carrier-dispatch@example.com")
 
 OWN_FLEET = "TruckerPath Fleet Dispatch"
 
 # The demo customer for Acts 1, 2 and 4. None of the three mock companies has a
-# usable email address, so the agent needs one customer it can actually reply to.
+# usable email address, so the demo needs one customer it can actually email.
 DEMO_CUSTOMER = {
     "code": "NFAS", "name": "Northfield Auto Supply", "type": "RET",
     "address": "2450 S 7th St", "city": "Phoenix", "province": "AZ", "postal": "85034",
@@ -147,8 +148,7 @@ def reset_demo() -> dict:
                 "pickup_appt_end": iso(pick_dt + timedelta(hours=1)) if pick_dt else None,
                 "delivery_appt_start": iso(delv_dt - timedelta(hours=1)) if delv_dt else None,
                 "delivery_appt_end": iso(delv_dt + timedelta(hours=1)) if delv_dt else None,
-                "agent_status": None,
-            }, events)
+                            }, events)
 
         # ── Act 1: missing milestones, needs the carrier ─────────────
         # Delivery appointment was 4 h ago; nothing recorded since Kansas City.
@@ -159,7 +159,7 @@ def reset_demo() -> dict:
             "truck_id": "PLF-2207", "driver_name": "D. Morgan",
             "carrier_name": "Prairie Line Freight", "carrier_email": CARRIER_EMAIL,
             "pickup_appt_start": at(-50), "pickup_appt_end": at(-48),
-            "delivery_appt_start": at(-4), "delivery_appt_end": at(-2), "agent_status": None,
+            "delivery_appt_start": at(-4), "delivery_appt_end": at(-2),
         }, [
             ("BOOKED", default_label("BOOKED"), None, at(-74)),
             ("ARRSHIP", "Arrived at shipper — Chicago, IL", "Chicago, IL", at(-49.75)),
@@ -168,7 +168,7 @@ def reset_demo() -> dict:
             ("INTRANSIT", "In Transit — Kansas City, MO", "Kansas City, MO", at(-20)),
         ])
 
-        # ── Act 2: missing truck ID, the agent can fix it itself ─────
+        # ── Act 2: missing truck ID; load 308 has the answer ─────────
         # Shipment has no truck or driver, but load 308 -> driver 4 -> TRUCK-015.
         _insert_shipment(conn, {
             "id": "SHP-2048", "customer_code": "NFAS", "load_id": 308,
@@ -177,7 +177,7 @@ def reset_demo() -> dict:
             "truck_id": None, "driver_name": None,
             "carrier_name": OWN_FLEET, "carrier_email": CARRIER_EMAIL,
             "pickup_appt_start": at(-6), "pickup_appt_end": at(-4),
-            "delivery_appt_start": at(20), "delivery_appt_end": at(22), "agent_status": None,
+            "delivery_appt_start": at(20), "delivery_appt_end": at(22),
         }, [
             ("BOOKED", default_label("BOOKED"), None, at(-30)),
             ("ARRSHIP", "Arrived at shipper — Phoenix, AZ", "Phoenix, AZ", at(-5.83)),
@@ -193,7 +193,7 @@ def reset_demo() -> dict:
             "truck_id": "TRUCK-012", "driver_name": "Raj P.",
             "carrier_name": OWN_FLEET, "carrier_email": CARRIER_EMAIL,
             "pickup_appt_start": at(-22), "pickup_appt_end": at(-20),
-            "delivery_appt_start": at(3), "delivery_appt_end": at(5), "agent_status": None,
+            "delivery_appt_start": at(3), "delivery_appt_end": at(5),
         }, [
             ("BOOKED", default_label("BOOKED"), None, at(-28)),
             ("ARRSHIP", "Arrived at shipper — Toronto, ON", "Toronto, ON", at(-21.67)),
@@ -209,7 +209,7 @@ def reset_demo() -> dict:
             "truck_id": "TRUCK-009", "driver_name": "Lisa R.",
             "carrier_name": OWN_FLEET, "carrier_email": CARRIER_EMAIL,
             "pickup_appt_start": at(-8), "pickup_appt_end": at(-6),
-            "delivery_appt_start": at(2), "delivery_appt_end": at(4), "agent_status": None,
+            "delivery_appt_start": at(2), "delivery_appt_end": at(4),
         }, [
             ("BOOKED", default_label("BOOKED"), None, at(-20)),
             ("ARRSHIP", "Arrived at shipper — Tucson, AZ", "Tucson, AZ", at(-7.75)),
@@ -236,25 +236,10 @@ def reset_demo() -> dict:
                 r["is_stackable"], r["is_urgent"], r["delivery_appointment"],
                 r["origin_country"], r["dest_country"], r["Quote"], r["skid_dims"], "csv"))
 
-        # ── One past, resolved case, so the portal shows some history ─
-        conn.execute(
-            "INSERT INTO cases (id, customer_code, shipment_id, order_id, channel, category, subject, "
-            "status, sender_email, external_ref, created_at, updated_at, resolved_at) "
-            "VALUES ('CASE-1001', 'NFAS', 'SHP-1039', NULL, 'portal', 'status_update', "
-            "'Where is my shipment? (SHP-1039)', 'resolved', NULL, NULL, "
-            "'2026-05-27T09:10:00-07:00', '2026-05-27T09:12:00-07:00', '2026-05-27T09:12:00-07:00')")
-        for author_type, name, body, t in [
-            ("customer", "Maria Lopez", "Is SHP-1039 still on track for delivery tomorrow?", "09:10"),
-            ("system", "TruckerPath", "Case CASE-1001 opened. Our team is on it; updates will appear here.", "09:10"),
-            ("agent", "TruckerPath Support", "Yes. SHP-1039 passed Gainesville, FL yesterday and is on "
-             "schedule for delivery in Miami tomorrow morning.", "09:12"),
-        ]:
-            conn.execute("INSERT INTO case_messages (case_id, author_type, author_name, body, created_at) "
-                         "VALUES ('CASE-1001', ?, ?, ?, ?)", (author_type, name, body, f"2026-05-27T{t}:00-07:00"))
 
         conn.commit()
         counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-                  for t in ("customers", "drivers", "loads", "shipments", "milestones", "orders", "cases")}
+                  for t in ("customers", "drivers", "loads", "shipments", "milestones", "orders")}
     finally:
         conn.close()
     return {"reset_at": iso(t0), "counts": counts}

@@ -45,3 +45,4 @@ backend/marketplace.db
 .env
 .venv/
 backend/tms.db
+plugin/plugin.db

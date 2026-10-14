@@ -1,5 +1,5 @@
 """
-main.py — FastAPI backend: Backhaul Load Marketplace + TMS API for the SMART API Agent
+main.py — FastAPI backend: Backhaul Load Marketplace + the TMS API
 
 Run from the project root:
     uvicorn backend.main:app --reload --port 8000
@@ -13,22 +13,30 @@ from backend.models import MatchRequest, MatchResponse, BidResult
 from backend.matching import eligibility_filter, net_value_rank
 from backend.database import create_tables
 from backend.tms import db as tms_db
-from backend.tms.routes import router as tms_router, tools as agent_tools_router
-from backend.tms.cases import portal as portal_router, cases as cases_router, intake as intake_router
+from backend.tms.routes import router as tms_router, portal as portal_router
 from backend.tms.seed import reset_demo
+
+
+def _schema_is_current() -> bool:
+    """False for a tms.db made by the older, agent-integrated version (no notes.visibility)."""
+    conn = tms_db.get_db()
+    try:
+        return "visibility" in {r["name"] for r in conn.execute("PRAGMA table_info(notes)")}
+    finally:
+        conn.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create marketplace tables; load the TMS demo data if it isn't there yet."""
     create_tables()
-    first_run = not os.path.exists(tms_db.DB_PATH)
+    first_run = not os.path.exists(tms_db.DB_PATH) or not _schema_is_current()
     if first_run or os.environ.get("TMS_RESET_ON_START", "false").lower() == "true":
         reset_demo()
     yield
 
 
-app = FastAPI(title="TruckerPath Backend", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="TruckerPath TMS", version="2.0.0", lifespan=lifespan)
 
 # CORS — which web pages may call this API from a browser.
 # Comma-separated list in CORS_ORIGINS; the Vite dev server by default.
@@ -41,10 +49,7 @@ app.add_middleware(
 )
 
 app.include_router(tms_router)
-app.include_router(agent_tools_router)
 app.include_router(portal_router)
-app.include_router(cases_router)
-app.include_router(intake_router)
 
 
 @app.post("/marketplace/match", response_model=MatchResponse)

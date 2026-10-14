@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { fmtDate, fmtDateTime, fmtTime, fmtWindow, timeAgo } from '../api/tms';
 import { useFreshIds, useNow } from '../hooks/useLiveData';
-import { CASE_STATUS, SHIPMENT_STATUS, api, getSession, initials, setSession } from './lib';
+import { NOTE_ACTION, SHIPMENT_STATUS, api, getSession, initials, setSession } from './lib';
 
 // ── Shell ────────────────────────────────────────────────────────────
 
@@ -115,21 +115,32 @@ export function ShipmentStatus({ status }) {
   return <span className={`tms-status ${SHIPMENT_STATUS[status] || 'tms-s-muted'}`}>{status}</span>;
 }
 
-export function CaseStatus({ status }) {
-  const s = CASE_STATUS[status] || { label: status, tone: 'tms-s-muted' };
-  return <span className={`tms-status ${s.tone}`}>{s.label}</span>;
+export function TrackingAlert({ alert }) {
+  return alert ? <div className="tms-inline-note warn">{alert}</div> : null;
+}
+
+/** Tabs inside a record page: [{ id, label }]. */
+export function RecordTabs({ tabs, tab, onChange }) {
+  return (
+    <div className="tms-tabs" style={{ padding: '0 6px', borderRadius: '6px 6px 0 0' }} role="tablist">
+      {tabs.map(t => (
+        <a key={t.id} role="tab" aria-selected={tab === t.id} href={`#${t.id}`} className={tab === t.id ? 'active' : ''}
+           onClick={e => { e.preventDefault(); onChange(t.id); }}>{t.label}</a>
+      ))}
+    </div>
+  );
 }
 
 // ── Tracking timeline ────────────────────────────────────────────────
 
-export function Timeline({ shipment, alert }) {
+export function Timeline({ shipment }) {
   const done = shipment.milestones.map(m => ({
     key: `m${m.id}`, label: m.label, meta: fmtDateTime(m.event_time),
-    src: m.source === 'carrier' ? 'Confirmed by carrier' : m.source === 'agent' ? 'Updated by TruckerPath' : null,
+    src: m.source === 'carrier' ? 'Confirmed by carrier' : m.source === 'agent' || m.source === 'staff' ? 'Updated by TruckerPath' : null,
     state: 'done',
   }));
   const reached = new Set(shipment.milestones.map(m => m.code));
-  const late = Boolean(alert);
+  const late = shipment.tracking_alert === 'Delivery overdue';
   const pending = [];
   if (shipment.status !== 'Delivered') {
     if (!reached.has('ARRCONSIGNEE')) {
@@ -154,45 +165,46 @@ export function Timeline({ shipment, alert }) {
   );
 }
 
-// ── Case conversation ────────────────────────────────────────────────
+// ── Notes ────────────────────────────────────────────────────────────
 
-function msgTime(iso) {
+function noteTime(iso) {
   const today = fmtDate(new Date().toISOString());
   return fmtDate(iso) === today ? fmtTime(iso) : fmtDate(iso);
 }
 
 /**
- * perspective: 'customer' (portal) or 'ops' (console).
- * onChange: called after a successful send, so the page can refresh.
+ * The Notes tab on a shipment or order.
+ * perspective: 'customer' (portal: only customer-visible notes, posts as the customer)
+ *              or 'ops' (console: every note, can post internal or customer-visible).
+ * onChange: called after a note is added, so the page can refresh.
  */
-export function CaseThread({ caseData, perspective, onChange }) {
-  const fresh = useFreshIds(caseData.messages);
+export function NotesPanel({ notes, entityType, entityId, customerCode, perspective, onChange }) {
+  const fresh = useFreshIds(notes);
   const [text, setText] = useState('');
-  const [status, setStatus] = useState('');
-  const [answers, setAnswers] = useState({});
+  const [visibility, setVisibility] = useState('internal');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const resolved = caseData.status === 'resolved';
+  const ordered = [...notes].sort((a, b) => a.id - b.id);
 
-  // The agent's latest request for details, if the customer hasn't answered it yet.
-  const lastFormIdx = caseData.messages.map(m => Boolean(m.form)).lastIndexOf(true);
-  const answered = lastFormIdx >= 0 && caseData.messages.slice(lastFormIdx + 1).some(m => m.form_response);
-  const openForm = perspective === 'customer' && !resolved && lastFormIdx >= 0 && !answered
-    ? caseData.messages[lastFormIdx].form : null;
-
-  async function submit(payload) {
+  async function submit(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
     setSending(true); setError('');
     try {
       if (perspective === 'customer') {
-        await api.post(`/api/portal/cases/${caseData.id}/messages`, payload);
+        await api.post('/api/portal/notes',
+          { customer_code: customerCode, entity_type: entityType, entity_id: entityId, message: text.trim() });
       } else {
-        await api.post(`/api/cases/${caseData.id}/messages`,
-          { author_type: 'ops', body: payload.body, status: status || undefined }, { auth: true });
+        const session = getSession();
+        await api.post('/api/notes', {
+          entity_type: entityType, entity_id: entityId, message: text.trim(), visibility,
+          author: session?.name || 'TruckerPath Operations', author_type: 'staff',
+        }, { auth: true });
       }
-      setText(''); setAnswers({}); setStatus('');
+      setText('');
       onChange?.();
-    } catch (e) {
-      setError(e.message);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setSending(false);
     }
@@ -200,61 +212,40 @@ export function CaseThread({ caseData, perspective, onChange }) {
 
   return (
     <div>
+      {ordered.length === 0 && <p className="tms-sub">No notes yet.</p>}
       <div className="tms-thread">
-        {caseData.messages.map(m => (
-          <div key={m.id} className={`tms-msg ${m.author_type}${fresh.has(m.id) ? ' fresh' : ''}`}>
-            <time className="tms-msg-time" dateTime={m.created_at} title={fmtDateTime(m.created_at)}>{msgTime(m.created_at)}</time>
+        {ordered.map(n => (
+          <div key={n.id} className={`tms-msg${n.author_type === 'system' ? ' system' : ''}${fresh.has(n.id) ? ' fresh' : ''}`}>
+            <time className="tms-msg-time" dateTime={n.created_at} title={fmtDateTime(n.created_at)}>{noteTime(n.created_at)}</time>
             <div>
-              {m.author_type !== 'system' && (
-                <div className="tms-msg-who">
-                  {m.author_name}
-                  {m.author_type === 'agent' && <span className="tms-msg-tag">{perspective === 'ops' ? 'SMART API Agent' : 'Automated'}</span>}
-                  {m.author_type === 'ops' && <span className="tms-msg-tag ops">Operations</span>}
-                </div>
-              )}
-              <p className="tms-msg-body">{m.body}</p>
-              {m.form && perspective === 'ops' && (
-                <p className="tms-sub" style={{ marginTop: 4 }}>Asked the customer for: {m.form.fields.map(f => f.label).join(', ')}</p>
-              )}
+              <div className="tms-msg-who">
+                {n.author}
+                {n.action !== 'note' && <span className="tms-msg-tag plain">{NOTE_ACTION[n.action] || n.action}</span>}
+                {perspective === 'ops' && n.visibility === 'customer' && <span className="tms-msg-tag ops">Visible to customer</span>}
+              </div>
+              <p className="tms-msg-body">{n.message}</p>
+              {perspective === 'ops' && n.source_ref && <div className="tms-feed-ref">Ref: {n.source_ref}</div>}
             </div>
           </div>
         ))}
       </div>
 
-      {openForm && (
-        <form className="tms-form-ask" onSubmit={e => { e.preventDefault(); submit({ form_response: answers }); }}>
-          {openForm.fields.map(f => (
-            <div className="tms-field" key={f.name}>
-              <label htmlFor={`f-${f.name}`}>{f.label}</label>
-              <input id={`f-${f.name}`} required value={answers[f.name] || ''}
-                     onChange={e => setAnswers(a => ({ ...a, [f.name]: e.target.value }))} />
-            </div>
-          ))}
-          <button className="tms-btn" disabled={sending}>{sending ? 'Sending' : 'Send details'}</button>
-        </form>
-      )}
-
-      {!resolved && !openForm && (
-        <form className="tms-reply" onSubmit={e => { e.preventDefault(); if (text.trim()) submit({ body: text.trim() }); }}>
-          <div className="tms-field">
-            <label htmlFor={`r-${caseData.id}`}>{perspective === 'customer' ? 'Add a message' : 'Reply to the customer'}</label>
-            <textarea id={`r-${caseData.id}`} value={text} onChange={e => setText(e.target.value)} rows={2} />
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            {perspective === 'ops' && (
-              <select aria-label="Set case status" value={status} onChange={e => setStatus(e.target.value)}
-                      style={{ height: 32, border: '1px solid var(--line)', borderRadius: 5, font: 'inherit', padding: '0 8px' }}>
-                <option value="">Keep status</option>
-                <option value="awaiting_customer">Waiting on customer</option>
-                <option value="needs_human">Needs a person</option>
-                <option value="resolved">Resolve case</option>
-              </select>
-            )}
-            <button className="tms-btn" disabled={sending || !text.trim()}>{sending ? 'Sending' : 'Send'}</button>
-          </div>
-        </form>
-      )}
-      {resolved && <p className="tms-sub" style={{ marginTop: 10 }}>Resolved {fmtDateTime(caseData.resolved_at)}.</p>}
+      <form className="tms-reply" onSubmit={submit}>
+        <div className="tms-field">
+          <label htmlFor={`note-${entityId}`}>{perspective === 'customer' ? 'Add a note or question' : 'Add a note'}</label>
+          <textarea id={`note-${entityId}`} value={text} onChange={e => setText(e.target.value)} rows={2} maxLength={2000} />
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {perspective === 'ops' && (
+            <select aria-label="Who can see this note" value={visibility} onChange={e => setVisibility(e.target.value)}
+                    style={{ height: 32, border: '1px solid var(--line)', borderRadius: 5, font: 'inherit', padding: '0 8px' }}>
+              <option value="internal">Internal only</option>
+              <option value="customer">Also visible to the customer</option>
+            </select>
+          )}
+          <button className="tms-btn" disabled={sending || !text.trim()}>{sending ? 'Saving' : 'Add note'}</button>
+        </div>
+      </form>
       {error && <div className="tms-error" style={{ marginTop: 10 }} role="alert">{error}</div>}
     </div>
   );

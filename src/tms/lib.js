@@ -41,43 +41,45 @@ export const SHIPMENT_STATUS = {
   'Delivered':   'tms-s-ok',
 };
 
-export const CASE_STATUS = {
-  new:               { label: 'New',                  tone: 'tms-s-bad' },
-  customer_replied:  { label: 'Customer replied',     tone: 'tms-s-agent' },
-  in_progress:       { label: 'Agent working',        tone: 'tms-s-agent' },
-  awaiting_carrier:  { label: 'Waiting on carrier',   tone: 'tms-s-warn' },
-  awaiting_customer: { label: 'Waiting on customer',  tone: 'tms-s-warn' },
-  needs_human:       { label: 'Needs a person',       tone: 'tms-s-bad' },
-  resolved:          { label: 'Resolved',             tone: 'tms-s-ok' },
+// Note tags, as shown in a record's Notes tab.
+export const NOTE_ACTION = {
+  note:               'Note',
+  message:            'Message',
+  update:             'Record updated',
+  milestone:          'Tracking update',
+  order_submitted:    'Quote request',
+  order_instructions: 'Instructions',
+  case_request:       'Request',
+  case_reply:         'Reply',
+  problem_detected:   'Problem detected',
+  handoff:            'Needs a person',
+  email_received:     'Email received',
+  asked_carrier:      'Asked carrier',
+  data_sweep:         'Data sweep',
 };
 
-export const HELP_TOPICS = [
-  { id: 'status_update',  label: 'Where is my shipment?',    for: 'shipment' },
-  { id: 'truck_number',   label: 'Need the truck number',    for: 'shipment' },
-  { id: 'change_request', label: 'Change a delivery detail', for: 'shipment' },
-  { id: 'quote_question', label: 'Question about my quote',  for: 'order' },
-  { id: 'other',          label: 'Something else',           for: 'both' },
+export const MILESTONE_CODES = [
+  { code: 'ARRSHIP', label: 'Arrived at shipper' },
+  { code: 'PICK', label: 'Picked up' },
+  { code: 'INTRANSIT', label: 'In transit (check call)' },
+  { code: 'ARRCONSIGNEE', label: 'Arrived at consignee' },
+  { code: 'DELV', label: 'Delivered' },
+  { code: 'POD', label: 'Proof of delivery uploaded' },
 ];
 
-export const RECOMMENDATION = {
-  answer_from_tms: { label: 'On track',             tone: 'tms-s-ok' },
-  fix_internally:  { label: 'Fix from TMS records', tone: 'tms-s-info' },
-  ask_carrier:     { label: 'Ask the carrier',      tone: 'tms-s-warn' },
-  needs_human:     { label: 'Needs a person',       tone: 'tms-s-bad' },
-};
+// ── Order formatting ─────────────────────────────────────────────────
 
-export const NOTE_ACTION = {
-  case_opened:      'Case opened',
-  case_status:      'Case status',
-  customer_replied: 'Customer replied',
-  replied_customer: 'Replied',
-  milestone:        'Milestone',
-  update:           'Record updated',
-  asked_carrier:    'Asked carrier',
-  handoff:          'Handed off',
-  data_sweep:       'Data sweep',
-  email_received:   'Email received',
-};
+export function place(zip, state, country) {
+  return [zip, state, country].filter(Boolean).join(', ');
+}
+
+export function lane(o) {
+  return `${place(o.origin_zip, o.origin_state, o.origin_country)} to ${place(o.dest_zip, o.dest_state, o.dest_country)}`;
+}
+
+export function weight(o) {
+  return Number.isFinite(Number(o.weight_lbs)) && o.weight_lbs !== '' ? `${Number(o.weight_lbs).toLocaleString()} lb` : o.weight_lbs;
+}
 
 export function initials(name = '') {
   return name.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();

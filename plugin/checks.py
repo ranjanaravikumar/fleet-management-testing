@@ -1,9 +1,10 @@
 """
-checks.py — the rule-based checks the SMART API Agent calls as tools.
+checks.py — the rule-based checks behind the toolkit and the detector.
 
 The AI in Qubi reads emails and writes replies. Decisions that must be
 exact (is a milestone overdue? is this ZIP valid?) are made here in code,
-so the agent gets the same answer every time.
+so the agent gets the same answer every time. Everything here works on
+plain records as the TMS API returns them; nothing here talks to the TMS.
 
 Every finding has a fix_class:
     auto          the agent may fix it itself (the right value is certain)
@@ -16,9 +17,9 @@ import difflib
 import re
 from datetime import timedelta
 
-from backend.tms.db import iso, now, parse
-from backend.tms.milestones import (ARRIVAL_GRACE_MINUTES, LOADING_WINDOW_HOURS,
-                                    UNLOADING_WINDOW_HOURS, default_label, step)
+from plugin.clock import iso, now, parse
+from plugin.milestones import (ARRIVAL_GRACE_MINUTES, LOADING_WINDOW_HOURS,
+                               UNLOADING_WINDOW_HOURS, default_label, step)
 
 # ── Shipments ────────────────────────────────────────────────────────
 
@@ -124,7 +125,7 @@ def check_shipment(s: dict, milestones: list[dict], customer: dict | None,
     }
 
 
-# ── Orders (orders.csv) ──────────────────────────────────────────────
+# ── Orders ──────────────────────────────────────────────
 
 VALID_FREIGHT_CLASSES = [50, 55, 60, 65, 70, 77.5, 85, 92.5, 100, 110, 125, 150,
                          175, 200, 250, 300, 400, 500]

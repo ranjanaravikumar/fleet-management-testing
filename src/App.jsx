@@ -18,7 +18,6 @@ import TpLogo from './components/TpLogo';
 import LoadMarketplace from './pages/LoadMarketplace';
 import Companies from './pages/Companies';
 import CompanyProfile from './pages/CompanyProfile';
-import AgentActivity from './pages/AgentActivity';
 import TmsApp from './tms/TmsApp';
 
 export default function App() {
@@ -118,7 +117,6 @@ export default function App() {
               <Route path="/companies" element={<Companies />} />
               <Route path="/companies/:code" element={<CompanyProfile />} />
               <Route path="/marketplace" element={<LoadMarketplace />} />
-              <Route path="/agent-activity" element={<AgentActivity />} />
             </Routes>
           </div>
         </div>

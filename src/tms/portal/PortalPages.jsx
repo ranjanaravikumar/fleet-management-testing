@@ -2,23 +2,15 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveData } from '../../hooks/useLiveData';
 import { fmtDate, fmtDateTime, fmtWindow } from '../../api/tms';
-import { ApiDown, LiveNote, PageHeader, ShipmentStatus, Timeline } from '../ui';
-import { PORTAL_CUSTOMER, api } from '../lib';
-import HelpPanel from './HelpPanel';
+import { ApiDown, LiveNote, NotesPanel, PageHeader, RecordTabs, ShipmentStatus, Timeline, TrackingAlert } from '../ui';
+import { PORTAL_CUSTOMER, api, lane, place, weight } from '../lib';
 
-const SHIPMENTS = `/api/portal/shipments?customer_code=${PORTAL_CUSTOMER}`;
-const ORDERS = `/api/portal/orders?customer_code=${PORTAL_CUSTOMER}`;
-
-function RecordNote({ alert, openCase }) {
-  if (openCase) return <div className="tms-inline-note agent">{openCase.customer_status}</div>;
-  if (alert) return <div className="tms-inline-note warn">{alert}</div>;
-  return null;
-}
+const Q = `customer_code=${PORTAL_CUSTOMER}`;
 
 // ── Shipments list ───────────────────────────────────────────────────
 
 export function PortalShipments() {
-  const live = useLiveData(SHIPMENTS, 3000);
+  const live = useLiveData(`/api/portal/shipments?${Q}`, 3000);
   const navigate = useNavigate();
   const rows = live.data || [];
   const active = rows.filter(s => s.status !== 'Delivered').length;
@@ -32,7 +24,7 @@ export function PortalShipments() {
       <div className="tms-panel" style={{ overflowX: 'auto' }}>
         <table className="tms-table">
           <thead>
-            <tr><th>Shipment</th><th>Route</th><th>Status</th><th>Delivery appointment</th><th className="tms-num">Value</th></tr>
+            <tr><th>Shipment</th><th>Route</th><th>Status</th><th>Last update</th><th>Delivery appointment</th><th className="tms-num">Value</th></tr>
           </thead>
           <tbody>
             {rows.map(s => (
@@ -40,7 +32,8 @@ export function PortalShipments() {
                 <td><Link className="tms-id" to={`/tms/portal/shipments/${s.id}`} onClick={e => e.stopPropagation()}>{s.id}</Link>
                   <div className="tms-sub">{s.bol}</div></td>
                 <td>{s.origin} to {s.destination}<div className="tms-sub">{s.commodity}, {s.weight_lbs?.toLocaleString()} lb</div></td>
-                <td><ShipmentStatus status={s.status} /><RecordNote alert={s.alert} openCase={s.open_case} /></td>
+                <td><ShipmentStatus status={s.status} /><TrackingAlert alert={s.tracking_alert} /></td>
+                <td>{s.last_milestone ? <>{s.last_milestone.label}<div className="tms-sub">{fmtDateTime(s.last_milestone.event_time)}</div></> : <span className="tms-sub">None yet</span>}</td>
                 <td>{fmtWindow(s.delivery_appt_start, s.delivery_appt_end)}</td>
                 <td className="tms-num">{s.amount}</td>
               </tr>
@@ -57,34 +50,38 @@ export function PortalShipments() {
 
 export function PortalShipment() {
   const { id } = useParams();
-  const list = useLiveData(SHIPMENTS, 3000);
-  const cases = useLiveData(`/api/cases?shipment_id=${encodeURIComponent(id)}`, 3000);
-  const s = list.data?.find(x => x.id === id);
+  const live = useLiveData(`/api/portal/shipments/${encodeURIComponent(id)}?${Q}`, 3000);
+  const [tab, setTab] = useState('tracking');
+  const s = live.data;
 
-  if (list.data && !s) {
+  if (live.error && !s) {
     return <PageHeader crumb={<Link to="/tms/portal">Shipments</Link>} title="Shipment not found"
                        subtitle={`${id} isn't one of your shipments.`} />;
   }
-  if (!s) return <><ApiDown live={list} /><p className="tms-empty">Loading shipment</p></>;
-
-  const refresh = () => { list.reload(); cases.reload(); };
+  if (!s) return <p className="tms-empty">Loading shipment</p>;
 
   return (
     <>
       <PageHeader crumb={<Link to="/tms/portal">Shipments</Link>} title={s.id}
                   subtitle={`${s.origin} to ${s.destination}`}>
         <ShipmentStatus status={s.status} />
-        <LiveNote live={list} />
+        <LiveNote live={live} />
       </PageHeader>
-      <div className="tms-grid-2">
-        <div className="tms-stack">
-          <section className="tms-panel">
-            <div className="tms-panel-h"><h2>Tracking</h2></div>
-            <div className="tms-panel-b"><Timeline shipment={s} alert={s.alert} /></div>
-          </section>
-          <section className="tms-panel">
-            <div className="tms-panel-h"><h2>Details</h2></div>
-            <dl className="tms-panel-b tms-kv">
+      <div className="tms-panel">
+        <RecordTabs tab={tab} onChange={setTab} tabs={[
+          { id: 'tracking', label: 'Tracking' },
+          { id: 'details', label: 'Details' },
+          { id: 'notes', label: `Notes (${s.notes.length})` },
+        ]} />
+        <div className="tms-panel-b">
+          {tab === 'tracking' && (
+            <>
+              {s.tracking_alert && <div className="tms-callout warn" style={{ marginBottom: 12 }}>{s.tracking_alert}</div>}
+              <Timeline shipment={s} />
+            </>
+          )}
+          {tab === 'details' && (
+            <dl className="tms-kv">
               <div><dt>BOL</dt><dd>{s.bol}</dd></div>
               <div><dt>Carrier</dt><dd>{s.carrier_name}</dd></div>
               <div><dt>Truck</dt><dd>{s.truck_id || 'Not assigned yet'}</dd></div>
@@ -94,9 +91,12 @@ export function PortalShipment() {
               <div><dt>Freight</dt><dd>{s.commodity}, {s.weight_lbs?.toLocaleString()} lb, {s.trailer}</dd></div>
               <div><dt>Value</dt><dd>{s.amount}</dd></div>
             </dl>
-          </section>
+          )}
+          {tab === 'notes' && (
+            <NotesPanel notes={s.notes} entityType="shipment" entityId={s.id} customerCode={PORTAL_CUSTOMER}
+                        perspective="customer" onChange={live.reload} />
+          )}
         </div>
-        <HelpPanel kind="shipment" recordId={s.id} alert={s.alert} cases={cases.data || []} onChange={refresh} />
       </div>
     </>
   );
@@ -104,23 +104,19 @@ export function PortalShipment() {
 
 // ── Orders and quotes ────────────────────────────────────────────────
 
-function place(zip, state, country) {
-  return [zip, state, country].filter(Boolean).join(', ');
-}
-
-function lane(o) {
-  return `${place(o.origin_zip, o.origin_state, o.origin_country)} to ${place(o.dest_zip, o.dest_state, o.dest_country)}`;
+export function QuoteStatus({ order }) {
+  return <span className={`tms-status ${order.quote_status === 'Quote pending' ? 'tms-s-warn' : 'tms-s-ok'}`}>{order.quote_status}</span>;
 }
 
 export function PortalOrders() {
-  const live = useLiveData(ORDERS, 3000);
+  const live = useLiveData(`/api/portal/orders?${Q}`, 3000);
   const navigate = useNavigate();
-  const rows = live.data || [];
+  const rows = live.data?.items || [];
   return (
     <>
       <PageHeader title="Orders and quotes" subtitle="Your recent orders and their quote status.">
         <LiveNote live={live} />
-        <Link className="tms-btn" to="/tms/portal/orders/new" style={{ textDecoration: 'none' }}>Request a quote</Link>
+        <Link className="tms-btn" to="/tms/portal/quote" style={{ textDecoration: 'none' }}>Request a quote</Link>
       </PageHeader>
       <ApiDown live={live} />
       <div className="tms-panel" style={{ overflowX: 'auto' }}>
@@ -133,70 +129,82 @@ export function PortalOrders() {
               <tr key={o.id} className="click" onClick={() => navigate(`/tms/portal/orders/${o.id}`)}>
                 <td><Link className="tms-id" to={`/tms/portal/orders/${o.id}`} onClick={e => e.stopPropagation()}>{o.id}</Link></td>
                 <td>{lane(o)}</td>
-                <td className="tms-num">{Number.isFinite(Number(o.weight_lbs)) ? `${Number(o.weight_lbs).toLocaleString()} lb` : o.weight_lbs}</td>
+                <td className="tms-num">{weight(o)}</td>
                 <td>{o.freight_class}</td>
-                <td>
-                  <span className={`tms-status ${o.quote_status === 'Quote pending' ? 'tms-s-warn' : 'tms-s-ok'}`}>{o.quote_status}</span>
-                  <RecordNote openCase={o.open_case} />
-                </td>
+                <td><QuoteStatus order={o} /></td>
                 <td>{fmtDate(o.created_at)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        {live.data && rows.length === 0 && <p className="tms-empty">No orders yet.</p>}
       </div>
     </>
+  );
+}
+
+export function OrderDetails({ o }) {
+  const dims = (o.skid_dims || '').toLowerCase();
+  return (
+    <dl className="tms-kv">
+      <div><dt>Pickup</dt><dd>{place(o.origin_zip, o.origin_state, o.origin_country)}</dd></div>
+      <div><dt>Delivery</dt><dd>{place(o.dest_zip, o.dest_state, o.dest_country)}</dd></div>
+      <div><dt>Weight</dt><dd>{weight(o)}</dd></div>
+      <div><dt>Freight class</dt><dd>{o.freight_class || 'Not provided'}</dd></div>
+      <div><dt>Pallets</dt><dd>{o.pallet_count || o.skid_details || 'Not provided'}</dd></div>
+      <div><dt>Pallet size</dt><dd>{dims && dims !== 'unknown' ? `${o.skid_dims} in` : 'Not provided'}</dd></div>
+      {o.commodity && <div><dt>Commodity</dt><dd>{o.commodity}</dd></div>}
+      <div><dt>Stackable</dt><dd>{o.is_stackable === 'True' ? 'Yes' : 'No'}</dd></div>
+      <div><dt>Urgent</dt><dd>{o.is_urgent === 'True' ? 'Yes' : 'No'}</dd></div>
+      <div><dt>Delivery appointment</dt><dd>{o.delivery_appointment === 'True' ? 'Needed' : 'Not needed'}</dd></div>
+      <div><dt>Quote</dt><dd>{o.quote_status}</dd></div>
+      <div><dt>Last updated</dt><dd>{fmtDateTime(o.last_updated_timestamp)}</dd></div>
+    </dl>
   );
 }
 
 export function PortalOrder() {
   const { id } = useParams();
-  const list = useLiveData(ORDERS, 3000);
-  const cases = useLiveData(`/api/cases?order_id=${encodeURIComponent(id)}`, 3000);
-  const o = list.data?.find(x => x.id === id);
+  const live = useLiveData(`/api/portal/orders/${encodeURIComponent(id)}?${Q}`, 3000);
+  const [tab, setTab] = useState('details');
+  const o = live.data;
 
-  if (list.data && !o) {
+  if (live.error && !o) {
     return <PageHeader crumb={<Link to="/tms/portal/orders">Orders and quotes</Link>} title="Order not found"
-                       subtitle={`${id} isn't in your recent orders.`} />;
+                       subtitle={`${id} isn't one of your orders.`} />;
   }
-  if (!o) return <><ApiDown live={list} /><p className="tms-empty">Loading order</p></>;
+  if (!o) return <p className="tms-empty">Loading order</p>;
 
-  const dims = (o.skid_dims || '').toLowerCase();
   return (
     <>
       <PageHeader crumb={<Link to="/tms/portal/orders">Orders and quotes</Link>} title={`Order ${o.id}`} subtitle={lane(o)}>
-        <span className={`tms-status ${o.quote_status === 'Quote pending' ? 'tms-s-warn' : 'tms-s-ok'}`}>{o.quote_status}</span>
-        <LiveNote live={list} />
+        <QuoteStatus order={o} />
+        <LiveNote live={live} />
       </PageHeader>
-      <div className="tms-grid-2">
-        <section className="tms-panel">
-          <div className="tms-panel-h"><h2>Order details</h2></div>
-          <dl className="tms-panel-b tms-kv">
-            <div><dt>Pickup</dt><dd>{place(o.origin_zip, o.origin_state, o.origin_country)}</dd></div>
-            <div><dt>Delivery</dt><dd>{place(o.dest_zip, o.dest_state, o.dest_country)}</dd></div>
-            <div><dt>Weight</dt><dd>{Number.isFinite(Number(o.weight_lbs)) ? `${Number(o.weight_lbs).toLocaleString()} lb` : o.weight_lbs}</dd></div>
-            <div><dt>Freight class</dt><dd>{o.freight_class || 'Not provided'}</dd></div>
-            <div><dt>Pallets</dt><dd>{o.pallet_count || o.skid_details || 'Not provided'}</dd></div>
-            {o.commodity && <div><dt>Commodity</dt><dd>{o.commodity}</dd></div>}
-            <div><dt>Pallet size</dt><dd>{dims && dims !== 'unknown' ? `${o.skid_dims} in` : 'Not provided'}</dd></div>
-            <div><dt>Quote</dt><dd>{o.quote_status}</dd></div>
-            <div><dt>Last updated</dt><dd>{fmtDateTime(o.last_updated_timestamp)}</dd></div>
-          </dl>
-        </section>
-        <HelpPanel kind="order" recordId={o.id} alert={null} cases={cases.data || []}
-                   onChange={() => { list.reload(); cases.reload(); }} />
+      <div className="tms-panel">
+        <RecordTabs tab={tab} onChange={setTab} tabs={[
+          { id: 'details', label: 'Details' },
+          { id: 'notes', label: `Notes (${o.notes.length})` },
+        ]} />
+        <div className="tms-panel-b">
+          {tab === 'details' && <OrderDetails o={o} />}
+          {tab === 'notes' && (
+            <NotesPanel notes={o.notes} entityType="order" entityId={o.id} customerCode={PORTAL_CUSTOMER}
+                        perspective="customer" onChange={live.reload} />
+          )}
+        </div>
       </div>
     </>
   );
 }
 
-// ── Request a quote (new order) ──────────────────────────────────────
+// ── Request a quote ──────────────────────────────────────────────────
 
 const EMPTY_ORDER = {
   origin_zip: '', origin_state: '', origin_country: '',
   dest_zip: '', dest_state: '', dest_country: '',
   weight: '', pallet_count: '', pallet_size: '', freight_class: '', commodity: '',
-  stackable: false, urgent: false, appointment: false,
+  stackable: false, urgent: false, appointment: false, notes: '',
 };
 
 function Field({ id, label, value, onChange, required, hint }) {
@@ -209,7 +217,7 @@ function Field({ id, label, value, onChange, required, hint }) {
   );
 }
 
-export function PortalNewOrder() {
+export function PortalRequestQuote() {
   const navigate = useNavigate();
   const [form, setForm] = useState(EMPTY_ORDER);
   const [sending, setSending] = useState(false);
@@ -220,8 +228,8 @@ export function PortalNewOrder() {
     e.preventDefault();
     setSending(true); setError('');
     try {
-      const res = await api.post('/api/portal/orders', { ...form, customer_code: PORTAL_CUSTOMER });
-      navigate(`/tms/portal/orders/${res.order.id}`);
+      const order = await api.post('/api/portal/orders', { ...form, customer_code: PORTAL_CUSTOMER });
+      navigate(`/tms/portal/orders/${order.id}`);
     } catch (err) {
       setError(err.message);
       setSending(false);
@@ -231,7 +239,7 @@ export function PortalNewOrder() {
   return (
     <>
       <PageHeader crumb={<Link to="/tms/portal/orders">Orders and quotes</Link>} title="Request a quote"
-                  subtitle="Enter the details as you have them. We check every order and tidy up anything we can." />
+                  subtitle="Enter the details as you have them. We'll follow up in the order's Notes if anything is missing." />
       <form onSubmit={submit} className="tms-stack" style={{ maxWidth: 900 }}>
         <section className="tms-panel">
           <div className="tms-panel-h"><h2>Pickup</h2></div>
@@ -264,10 +272,15 @@ export function PortalNewOrder() {
               <label><input type="checkbox" checked={form.urgent} onChange={e => set('urgent')(e.target.checked)} /> Urgent</label>
               <label><input type="checkbox" checked={form.appointment} onChange={e => set('appointment')(e.target.checked)} /> Delivery appointment needed</label>
             </div>
+            <div className="tms-field" style={{ marginTop: 12 }}>
+              <label htmlFor="q-notes">Instructions</label>
+              <textarea id="q-notes" rows={2} value={form.notes} onChange={e => set('notes')(e.target.value)}
+                        placeholder="Dock hours, special handling, anything else" />
+            </div>
           </div>
         </section>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button className="tms-btn" disabled={sending}>{sending ? 'Submitting' : 'Submit order'}</button>
+          <button className="tms-btn" disabled={sending}>{sending ? 'Submitting' : 'Submit request'}</button>
           <Link to="/tms/portal/orders">Cancel</Link>
         </div>
         {error && <div className="tms-error" role="alert">{error}</div>}

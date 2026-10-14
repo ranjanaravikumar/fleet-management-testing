@@ -4,6 +4,40 @@ TruckerPath is a full-stack fleet management SaaS platform built for modern logi
 
 ---
 
+## TMS + SMART API Agent plugin
+
+This branch splits the agent out of the TMS. The two run as separate services:
+
+| Piece | Where | Role |
+|---|---|---|
+| **Plain TMS** | `backend/tms`, screens at `/tms` | Shipments, tracking, orders, Request a quote, and a Notes tab on each record. No cases, no agent activity, no approve buttons |
+| **Plugin** | `plugin/` (its own service) | **Detector:** every minute checks active shipments and starts Flow 1 through the Qubi webhook, once per new problem. **Customer requests:** an endpoint (and customer notes) that start Flow 1. **Order events:** the TMS tells the plugin when an order is submitted and the order is reviewed. **Toolkit:** the checks and fixes. Talks to the TMS only through its normal API |
+| **Qubi flows** | Qubi | Unchanged: only the base URL (`TMS_URL` in Qubi) points at the plugin |
+
+Quick start (three terminals, venv active, from the project root):
+
+```bash
+pip install -r backend/requirements.txt -r plugin/requirements.txt
+
+# 1. TMS on :8000, sending order events to the plugin
+TMS_EVENTS_URL=http://localhost:8100/events/tms uvicorn backend.main:app --reload --port 8000
+
+# 2. Plugin on :8100 (add QUBI_WEBHOOK_URL / QUBI_TRIGGER_SECRET for Flow 1)
+uvicorn plugin.main:app --reload --port 8100
+
+# 3. Screens: http://localhost:5173/Load-Lorry/tms
+npm install && npm run dev
+
+# Check it all end to end (resets the demo data)
+python -m plugin.smoke_test
+```
+
+On Windows Command Prompt, set variables first with `set TMS_EVENTS_URL=...`.
+Details: `backend/tms/README.md` (TMS API), `plugin/README.md` (plugin),
+`docs/qubi-build-guide.md` (the Qubi flows).
+
+---
+
 ## Features
 
 ### Landing Page

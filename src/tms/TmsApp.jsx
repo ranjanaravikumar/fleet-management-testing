@@ -5,8 +5,8 @@ import { TMS_API_URL } from '../api/tms';
 import { useLiveData } from '../hooks/useLiveData';
 import { PORTAL_CUSTOMER, getSession, setSession } from './lib';
 import { SideNav, Tabs, TopBar } from './ui';
-import { PortalNewOrder, PortalOrder, PortalOrders, PortalShipment, PortalShipments } from './portal/PortalPages';
-import { OpsActivity, OpsCases, OpsOrders, OpsShipment, OpsShipments } from './ops/OpsPages';
+import { PortalOrder, PortalOrders, PortalRequestQuote, PortalShipment, PortalShipments } from './portal/PortalPages';
+import { OpsOrder, OpsOrders, OpsShipment, OpsShipments } from './ops/OpsPages';
 
 // ── Sign-in ──────────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ function SignIn() {
             <section className="tms-panel">
               <div className="tms-panel-h"><h2>Customer portal</h2></div>
               <div className="tms-panel-b">
-                <p>Track shipments, see quotes and get help with an order.</p>
+                <p>Track shipments, see orders and quotes, and request a quote.</p>
                 <dl className="tms-kv" style={{ gridTemplateColumns: '1fr', marginBottom: 14 }}>
                   <div><dt>Account</dt><dd>{customer ? `${customer.name} (${customer.code})` : 'Loading'}</dd></div>
                   <div><dt>Signed in as</dt><dd>{customer?.contact || ' '}</dd></div>
@@ -64,7 +64,7 @@ function SignIn() {
             <section className="tms-panel">
               <div className="tms-panel-h"><h2>Operations console</h2></div>
               <form className="tms-panel-b" onSubmit={asOps}>
-                <p>Shipments, customer cases, order data and the agent's activity.</p>
+                <p>Shipments, tracking, orders and notes.</p>
                 <div className="tms-field">
                   <label htmlFor="ops-key">Access key</label>
                   <input id="ops-key" type="password" autoComplete="current-password" value={key}
@@ -96,6 +96,7 @@ function PortalLayout() {
       <Tabs items={[
         { to: '/tms/portal', label: 'Shipments', end: true },
         { to: '/tms/portal/orders', label: 'Orders and quotes' },
+        { to: '/tms/portal/quote', label: 'Request a quote' },
       ]} />
       <main className="tms-main"><div className="tms-main-narrow"><Outlet /></div></main>
     </div>
@@ -103,19 +104,16 @@ function PortalLayout() {
 }
 
 function OpsLayout() {
-  const open = useLiveData('/api/cases?status=open', 4000);
-  const needPerson = (open.data || []).filter(c => c.status === 'needs_human' || c.status === 'new').length;
+  const ships = useLiveData('/api/shipments?status=active', 10000);
+  const exceptions = (ships.data || []).filter(s => s.tracking_alert).length;
   return (
     <div className="tms">
       <TopBar area="ops" />
       <div className="tms-body">
         <SideNav items={[
           { group: 'Operations' },
-          { to: '/tms/ops/shipments', label: 'Shipments' },
-          { to: '/tms/ops/cases', label: 'Cases', count: needPerson },
+          { to: '/tms/ops/shipments', label: 'Shipments', count: exceptions },
           { to: '/tms/ops/orders', label: 'Orders' },
-          { group: 'SMART API Agent' },
-          { to: '/tms/ops/activity', label: 'Agent activity' },
         ]} />
         <main className="tms-main"><Outlet /></main>
       </div>
@@ -133,16 +131,16 @@ export default function TmsApp() {
         <Route index element={<PortalShipments />} />
         <Route path="shipments/:id" element={<PortalShipment />} />
         <Route path="orders" element={<PortalOrders />} />
-        <Route path="orders/new" element={<PortalNewOrder />} />
         <Route path="orders/:id" element={<PortalOrder />} />
+        <Route path="quote" element={<PortalRequestQuote />} />
+        <Route path="orders/new" element={<Navigate to="/tms/portal/quote" replace />} />
       </Route>
       <Route path="/tms/ops" element={<RequireRole role="ops"><OpsLayout /></RequireRole>}>
         <Route index element={<Navigate to="shipments" replace />} />
         <Route path="shipments" element={<OpsShipments />} />
         <Route path="shipments/:id" element={<OpsShipment />} />
-        <Route path="cases" element={<OpsCases />} />
         <Route path="orders" element={<OpsOrders />} />
-        <Route path="activity" element={<OpsActivity />} />
+        <Route path="orders/:id" element={<OpsOrder />} />
       </Route>
       <Route path="/tms/*" element={<Navigate to="/tms" replace />} />
     </Routes>

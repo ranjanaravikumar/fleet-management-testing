@@ -1,5 +1,5 @@
 """
-db.py — SQLite storage for the TMS data the SMART API Agent works with.
+db.py — SQLite storage for the TMS: shipments, tracking, orders and notes.
 
 Kept in its own file (tms.db), separate from the marketplace database.
 """
@@ -39,7 +39,7 @@ def get_db() -> sqlite3.Connection:
 
 
 SCHEMA = """
-DROP TABLE IF EXISTS case_messages;
+DROP TABLE IF EXISTS case_messages;   -- left over from the agent-integrated version
 DROP TABLE IF EXISTS cases;
 DROP TABLE IF EXISTS notes;
 DROP TABLE IF EXISTS milestones;
@@ -108,7 +108,6 @@ CREATE TABLE shipments (
     pickup_appt_end         TEXT,
     delivery_appt_start     TEXT,
     delivery_appt_end       TEXT,
-    agent_status            TEXT,
     updated_at              TEXT
 );
 
@@ -146,54 +145,26 @@ CREATE TABLE orders (
     dest_country            TEXT,
     quote                   TEXT,
     skid_dims               TEXT,
-    agent_status            TEXT,
     origin_state            TEXT,
     dest_state              TEXT,
     pallet_count            TEXT,
     commodity               TEXT,
-    source                  TEXT NOT NULL DEFAULT 'csv'   -- csv (sample data) | portal (entered by a customer)
+    source                  TEXT NOT NULL DEFAULT 'csv'   -- csv (sample data) | portal (quote request from a customer)
 );
 
 CREATE TABLE notes (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type     TEXT NOT NULL,
+    entity_type     TEXT NOT NULL,           -- shipment | order | customer
     entity_id       TEXT NOT NULL,
-    author          TEXT NOT NULL,
-    action          TEXT NOT NULL,
+    author          TEXT NOT NULL,           -- display name
+    author_type     TEXT NOT NULL DEFAULT 'staff',   -- customer | staff | carrier | integration | system
+    visibility      TEXT NOT NULL DEFAULT 'internal', -- internal (staff only) | customer (also shown in the portal)
+    action          TEXT NOT NULL,           -- short tag: note, update, milestone, order_submitted, ...
     message         TEXT NOT NULL,
     source_ref      TEXT,
     created_at      TEXT NOT NULL
 );
 
-CREATE TABLE cases (
-    id              TEXT PRIMARY KEY,
-    customer_code   TEXT REFERENCES customers(code),
-    shipment_id     TEXT REFERENCES shipments(id),
-    order_id        TEXT REFERENCES orders(id),
-    channel         TEXT NOT NULL,           -- portal | email | phone
-    category        TEXT NOT NULL,
-    subject         TEXT NOT NULL,
-    status          TEXT NOT NULL,           -- new | in_progress | awaiting_carrier | awaiting_customer | needs_human | resolved
-    sender_email    TEXT,                    -- email cases: who wrote in
-    external_ref    TEXT,                    -- email cases: message ID, for threading replies
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL,
-    resolved_at     TEXT
-);
-
-CREATE TABLE case_messages (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    case_id         TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
-    author_type     TEXT NOT NULL,           -- customer | agent | ops | system
-    author_name     TEXT NOT NULL,
-    body            TEXT NOT NULL,
-    form            TEXT,                    -- JSON: fields the agent asks the customer to fill in
-    form_response   TEXT,                    -- JSON: what the customer filled in
-    created_at      TEXT NOT NULL
-);
-
-CREATE INDEX idx_cases_status ON cases(status);
-CREATE INDEX idx_case_messages_case ON case_messages(case_id);
 CREATE INDEX idx_milestones_shipment ON milestones(shipment_id);
 CREATE INDEX idx_notes_entity ON notes(entity_type, entity_id);
 """

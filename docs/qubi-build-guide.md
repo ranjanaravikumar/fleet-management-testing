@@ -7,20 +7,37 @@ words used here; match each step to the closest node in the editor.
 ## How the pieces connect
 
 ```
-Customer portal "Get help" ──► Case in the TMS ──webhook──► Qubi workflow A
-                                     ▲                          │
-                                     │  replies in the case     ├──email──► Carrier inbox
-                                     └──────────────────────────┤
-Carrier's reply email ──────────────► Qubi workflow B ──────────┘
-Customer replies in the portal ──webhook──► Qubi workflow A (customer_replied)
+                 ┌── TMS (plain) ──┐        ┌── Plugin ───────────────────────┐
+Customer note ──►│ Notes tab       │◄─poll──┤ Notes watcher ─┐                │
+Request a quote ►│ Orders ─────────┼─event─►│ /events/tms ───┼─► case ─webhook┼─► Qubi workflow A (Flow 1)
+                 │ Shipments ◄─────┼──poll──┤ Detector ──────┘                │        │
+                 └─────────────────┘        │ /api/customer-requests ─► case  │        │
+                         ▲                  │ /api/cases, /api/agent-tools ◄──┼────────┤
+                         └── normal API ────┤ everything else → passed on     │        ├─email─► Carrier inbox
+                                            └─────────────────────────────────┘        │
+Carrier's reply email ──────────────────────────────► Qubi workflow B ─────────────────┘
 ActionHub (a person) ◄── anything the agent must not decide alone
 ```
 
-Customers raise issues in the portal, which creates a **case**. Qubi does the
-language work: deciding what to say, reading the carrier's email. The TMS API
-does the exact work: checks, records, and the case conversation the customer
-sees. Customer email can be added later as another way to open a case
-(see "Later: customer email" at the end); nothing else changes.
+The TMS is a plain TMS: shipments, tracking, orders, quote requests and a
+Notes tab on every record. It has no cases and no agent screens. The
+**plugin** (`plugin/`, its own service) does the rest and talks to the TMS only
+through its normal API. A **case** starts Flow 1 when:
+
+- the **detector** finds a new problem on an active shipment (checked every minute, reported once per problem);
+- a **customer asks**: a note on their shipment or order in the portal, or a call to `POST /api/customer-requests` (e.g. from an email workflow);
+- the TMS reports a **submitted order** (Request a quote).
+
+Qubi does the language work: deciding what to say, reading the carrier's
+email. The plugin does the exact work: checks, fixes, and the case
+conversation. What the agent tells the customer appears as a note on the
+shipment or order in the TMS.
+
+**Moving from the earlier TMS:** the flows are unchanged. Point `TMS_URL` in
+Qubi at the plugin instead of the TMS, and move the webhook settings to the
+plugin (below). Every path the flows call exists on the plugin, either
+answered by it (`/api/cases`, `/api/agent-tools`) or passed to the TMS
+(`/api/shipments`, `/api/orders`, `/api/notes`, `/api/lookup`).
 
 ## Before you build: confirm these in Qubi
 
@@ -37,8 +54,8 @@ sees. Customer email can be added later as another way to open a case
 
 | Name | Value |
 |---|---|
-| `TMS_URL` | Your ngrok address while testing, e.g. `https://purse-giving-railroad.ngrok-free.dev`; your Render address later |
-| `TMS_API_KEY` | The same value as `TMS_API_KEY` in the backend's `.env` |
+| `TMS_URL` | The **plugin's** address: your ngrok address for port 8100 while testing, e.g. `https://purse-giving-railroad.ngrok-free.dev`; your Render address later |
+| `TMS_API_KEY` | The same value as `TMS_API_KEY` in the backend's `.env` (the plugin accepts it by default) |
 
 Headers on **every** HTTP call:
 
@@ -48,26 +65,29 @@ X-API-Key: {TMS_API_KEY}          (needed for writes, harmless on reads)
 Content-Type: application/json    (on POST and PATCH)
 ```
 
-## Connecting the TMS to Qubi's trigger
+## Connecting the plugin to Qubi's trigger
 
 1. In Qubi, create the trigger for workflow A and copy its **callback URL** and
    **secret** (shown under the workflow's Delivery section).
-2. Add them to the backend's `.env` and restart the backend:
+2. Set them for the **plugin** and restart it:
    ```
    QUBI_WEBHOOK_URL=<callback URL>
    QUBI_TRIGGER_SECRET=<secret>
    ```
-3. Check it at `GET /api/cases/webhook-status`; after a test case, `recent`
-   should show `HTTP 200`.
+3. Check it at `GET /api/cases/webhook-status` on the plugin; after a test
+   case, `recent` should show `HTTP 200`.
 
-The TMS sends this body, with the secret in the `X-Trigger-Secret` header:
+The plugin sends this body, with the secret in the `X-Trigger-Secret` header:
 
 ```json
 {"event": "case.created", "case_id": "CASE-1002", "case": { ...the full case, with messages... }}
 ```
 
 `event` is `case.created` for a new case, or `case.customer_replied` when the
-customer answers in the portal. Workflow A branches on it first.
+customer answers with a note. Workflow A branches on it first. A case the
+detector opened has `"channel": "monitor"`; its first message, from
+"TruckerPath monitoring", says what was found (e.g. "Delivered overdue by
+124 min"). The flow handles it like any other case.
 
 **No webhook yet?** Use a polling trigger that calls `GET /api/cases?status=new`
 every 15 to 30 seconds and runs workflow A for each case returned.
@@ -98,7 +118,8 @@ Then on `recommendation`:
 | `ask_customer` (orders) | Apply the `auto` issues with one `PATCH /api/orders/{id}`. Post a message with a `form` asking for the missing fields, with `"status": "awaiting_customer"` |
 | `needs_human` | Create an ActionHub task with the case and the check's `summary` and `guardrails`. Post to the customer with `"status": "needs_human"` |
 
-**Posting to the customer** (shown in the portal straight away):
+**Posting to the customer** (becomes a customer-visible note on the shipment
+or order, shown in the portal straight away):
 
 ```
 POST {TMS_URL}/api/cases/{case_id}/messages
@@ -145,7 +166,11 @@ TruckerPath Operations
 ### When the customer replies (event `case.customer_replied`, Act 4)
 
 1. Read the newest customer message in the case. Its `form_response` holds
-   the fields, e.g. `{"pallets": "2", "dims": "48x40x50"}`.
+   the fields, e.g. `{"pallets": "2", "dims": "48x40x50"}`. The customer
+   answers with a note; the note the agent posted lists the questions as
+   `Label: ` lines, and the plugin reads `Label: value` lines (or one answer
+   per line) back into `form_response`. If it can't, `form_response` is
+   empty and the answer is in the message `body`.
 2. `PATCH /api/orders/{order_id}` with `{"skid_details": "2 pallets", "skid_dims": "48x40x50", "reason": "Customer sent pallet details", "source_ref": "{case_id}"}`.
 3. ActionHub task: "Price order {order_id}". Prices go through a person.
 4. Post: "Thanks, we've added your pallet details. Our pricing team will send
@@ -212,7 +237,7 @@ demo run to show the safety option, then off to show full speed.
 1. Workflow A, started by hand with a case ID: claim, check, and post a reply.
    Watch the calls in ngrok's inspector (http://127.0.0.1:4040).
 2. Add the `answer_from_tms` and `fix_internally` branches (Act 2).
-3. Connect the webhook trigger, so opening a case in the portal starts the flow.
+3. Connect the webhook trigger, so a customer note, a new order or the detector starts the flow.
 4. Add `ask_carrier` and workflow B (Act 1).
 5. Add `needs_human` and ActionHub (Act 3).
 6. Add the order paths and `customer_replied` (Act 4), then workflow C (Act 5).
@@ -220,15 +245,23 @@ demo run to show the safety option, then off to show full speed.
 
 ## Testing each act
 
-Customer portal: sign in at `/tms` and choose **Continue as customer**.
+Customer portal: sign in at `/tms` and choose **Continue as customer**. The
+customer asks by adding a note in a record's **Notes** tab; the agent's
+answer appears there as a note from TruckerPath Support.
 
-| Act | In the customer portal | Expect |
+With the detector on (the default), Acts 1 and 2 start **by themselves**
+within a minute of a reset: the detector sees SHP-1042's overdue delivery and
+SHP-2048's missing truck and starts workflow A for each. To show them started
+by the customer instead, run the plugin with `DETECTOR_ENABLED=false`.
+
+| Act | Who starts it | Expect |
 |---|---|---|
-| 1 | SHP-1042 shows "Delivery not confirmed yet". Click **Get an update** | Conversation says "Checking with the carrier"; the carrier gets an email. Reply as the carrier with times; the timeline fills in, the status becomes Delivered, the case is resolved |
-| 2 | SHP-2048, **Get help**, **Need the truck number** | Answer within seconds: TRUCK-015, Marcus Johnson; the Details panel fills in |
-| 3 | SHP-2048, **Get help**, **Change a delivery detail**, "Please deliver to our Mesa warehouse instead" | "Our operations team is on it"; an ActionHub task appears; the ops console Cases page shows it as Needs a person |
-| 4 | Orders and quotes, SHP45342, **Question about my quote** | A form asks for pallet details. Fill it in; an ActionHub pricing task appears |
-| 5 | Run workflow C | Ops console, Orders: "Safe to fix automatically" goes from 221 to 0 |
+| 1 | Detector, or the customer's note on SHP-1042: "Where is my shipment?" | A note says the carrier is being checked with; the carrier gets an email. Reply as the carrier with times; the timeline fills in, the status becomes Delivered, the case is resolved |
+| 2 | Detector, or a note on SHP-2048: "What's the truck number?" | Within seconds: TRUCK-015, Marcus Johnson in the Notes tab; Details fills in |
+| 3 | A note on SHP-2048: "Please deliver to our Mesa warehouse instead" | "Our operations team is on it"; an ActionHub task appears; staff see a "Needs a person" note on the shipment in the ops console |
+| 4 | A note on order SHP45342: "Question about my quote" | A note asks for pallet details. Answer with a note (`Number of pallets: 2`, `Pallet size, L x W x H in inches: 48x40x50`); an ActionHub pricing task appears |
+| 4b | **Request a quote** with untidy details (`arizona`, `canada`, `1,200 lbs`) | The order is reviewed: a note lists the details tidied up and asks for anything missing |
+| 5 | Run workflow C | `GET /api/agent-tools/orders/data-quality`: `auto` goes from 221 to 0 |
 
 ## Later: customer email
 
@@ -236,9 +269,10 @@ When you want customers to email in as well:
 
 1. Connect the customer-facing Gmail in Qubi.
 2. Add a workflow: on each new email, AI reads it (reference, category,
-   message); `GET /api/lookup?ref=...` finds the record; then
-   `POST /api/cases` with `"channel": "email"`, `"sender_email"` and
-   `"external_ref"` (the email's message ID).
+   message); then `POST /api/customer-requests` with `"ref"` (any shipment,
+   BOL or order reference: the plugin looks it up), `"message"`,
+   `"channel": "email"`, `"sender_email"` and `"external_ref"` (the email's
+   message ID). `"category"` is optional; left out, the plugin works it out.
 3. That creates a normal case, so workflow A runs exactly as above. For email
    cases, also send the agent's message back by email, as a reply in the
    same thread.

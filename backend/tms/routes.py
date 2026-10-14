@@ -1,27 +1,32 @@
 """
-routes.py — the TMS API the SMART API Agent (Qubi) and the web pages use.
+routes.py — the TMS API: shipments, tracking, orders, quote requests and notes.
 
-  /api/...              TMS data: read open, writes need X-API-Key
-  /api/agent-tools/...  rule-based checks the agent calls before deciding what to do
+A plain TMS. It has no knowledge of the SMART API Agent; the plugin
+(plugin/) reads and writes through this same API like any other client.
+
+  /api/...         TMS data: reading is open, writes need X-API-Key
+  /api/portal/...  what the customer portal shows and does (no key; demo customer)
 """
+import random
 import re
 from datetime import timedelta
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.tms import checks
+from backend.tms import events
 from backend.tms.auth import require_api_key
 from backend.tms.db import get_db, iso, now, parse, stamp
 from backend.tms.milestones import MILESTONES, REPEATABLE, default_label, status_for, step
 from backend.tms.seed import reset_demo
 
 router = APIRouter(prefix="/api", tags=["TMS"])
-tools = APIRouter(prefix="/api/agent-tools", tags=["Agent tools"])
+portal = APIRouter(prefix="/api/portal", tags=["Customer portal"])
 
-AGENT = "SMART API Agent"
-AgentStatus = Optional[Literal["awaiting_carrier", "awaiting_customer", "needs_human", "resolved"]]
+STAFF = "TruckerPath Operations"
+AuthorType = Literal["customer", "staff", "carrier", "integration", "system"]
+Visibility = Literal["internal", "customer"]
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -36,12 +41,14 @@ def _rows(conn, sql, *args) -> list[dict]:
 
 
 FIELD_WORDS = {
-    "truck_id": "truck", "driver_name": "driver", "agent_status": "agent status",
+    "truck_id": "truck", "driver_name": "driver",
     "delivery_appt_start": "delivery window start", "delivery_appt_end": "delivery window end",
     "origin_zip": "origin postal code", "dest_zip": "destination postal code",
+    "origin_state": "origin state", "dest_state": "destination state",
     "origin_country": "origin country", "dest_country": "destination country",
     "fuel_surcharge_percent": "fuel surcharge %", "skid_dims": "pallet dimensions",
-    "skid_details": "pallet details", "freight_class": "freight class", "weight_lbs": "weight (lb)",
+    "skid_details": "pallet details", "pallet_count": "pallet count",
+    "freight_class": "freight class", "weight_lbs": "weight (lb)",
 }
 
 
@@ -55,8 +62,6 @@ def _friendly_value(field: str, value) -> str:
         return "empty"
     if field.endswith("_appt_start") or field.endswith("_appt_end"):
         return _friendly_time(value)
-    if field == "agent_status":
-        return str(value).replace("_", " ")
     return str(value)
 
 
@@ -70,12 +75,14 @@ def _norm(ref: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", ref.upper())
 
 
-def _note(conn, entity_type, entity_id, action, message, source_ref=None, author=AGENT):
-    conn.execute(
-        "INSERT INTO notes (entity_type, entity_id, author, action, message, source_ref, created_at) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (entity_type, entity_id, author, action, message, source_ref, stamp()),
+def _note(conn, entity_type, entity_id, action, message, source_ref=None, author=STAFF,
+          author_type="staff", visibility="internal") -> int:
+    cur = conn.execute(
+        "INSERT INTO notes (entity_type, entity_id, author, author_type, visibility, action, message, "
+        "source_ref, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        (entity_type, entity_id, author, author_type, visibility, action, message, source_ref, stamp()),
     )
+    return cur.lastrowid
 
 
 def _shipment_or_404(conn, shipment_id: str) -> dict:
@@ -97,15 +104,47 @@ def _milestones(conn, shipment_id):
                  shipment_id)
 
 
+def _notes(conn, entity_type, entity_id, customer_only=False):
+    sql = "SELECT * FROM notes WHERE entity_type = ? AND entity_id = ?"
+    if customer_only:
+        sql += " AND visibility = 'customer'"
+    return _rows(conn, sql + " ORDER BY id DESC", entity_type, entity_id)
+
+
 def _refresh_status(conn, shipment_id):
     codes = [m["code"] for m in _milestones(conn, shipment_id)]
     conn.execute("UPDATE shipments SET status = ?, updated_at = ? WHERE id = ?",
                  (status_for(codes), stamp(), shipment_id))
 
 
+def _tracking_alert(s: dict, milestones: list[dict]) -> str | None:
+    """The standard TMS exception flag: an appointment window has passed without the milestone."""
+    if s["status"] == "Delivered":
+        return None
+    codes = {m["code"] for m in milestones}
+    t = now()
+    if s["delivery_appt_end"] and t > parse(s["delivery_appt_end"]) and "DELV" not in codes:
+        return "Delivery overdue"
+    if s["pickup_appt_end"] and t > parse(s["pickup_appt_end"]) and "PICK" not in codes:
+        return "Pickup overdue"
+    return None
+
+
+def _num(text) -> float | None:
+    try:
+        return float(re.sub(r"[^\d.\-]", "", str(text or "")))
+    except ValueError:
+        return None
+
+
+def _quote_status(o: dict) -> str:
+    amount = _num(o["quote"]) if (o["quote"] or "").strip() else None
+    return f"Quoted ${amount:,.2f}" if amount is not None else "Quote pending"
+
+
 # ── lookup ───────────────────────────────────────────────────────────
 
-@router.get("/lookup", summary="Find a shipment or order from any reference in an email")
+@router.get("/lookup", summary="Find a shipment or order from any reference (ID or BOL, any format)")
 def lookup(ref: str = Query(..., description="Shipment ID, BOL or order number, any format")):
     key = _norm(ref)
     conn = get_db()
@@ -121,20 +160,29 @@ def lookup(ref: str = Query(..., description="Shipment ID, BOL or order number, 
     raise HTTPException(404, f"No shipment or order matches {ref!r}.")
 
 
-# ── shipments ────────────────────────────────────────────────────────
+# ── shipments and tracking ───────────────────────────────────────────
 
-@router.get("/shipments", summary="All shipments with their milestones (optionally one customer's)")
-def list_shipments(customer_code: Optional[str] = None):
+@router.get("/shipments", summary="Shipments with their milestones")
+def list_shipments(customer_code: Optional[str] = None,
+                   status: Optional[str] = Query(None, description="'active' (not delivered), 'delivered', "
+                                                                   "or an exact status such as 'In Transit'")):
     sql, args = ("SELECT s.*, c.name AS customer_name FROM shipments s "
-                 "LEFT JOIN customers c ON c.code = s.customer_code"), []
+                 "LEFT JOIN customers c ON c.code = s.customer_code WHERE 1=1"), []
     if customer_code:
-        sql, args = sql + " WHERE s.customer_code = ?", [customer_code]
+        sql, args = sql + " AND s.customer_code = ?", args + [customer_code]
+    if status == "active":
+        sql += " AND s.status != 'Delivered'"
+    elif status == "delivered":
+        sql += " AND s.status = 'Delivered'"
+    elif status:
+        sql, args = sql + " AND s.status = ?", args + [status]
     conn = get_db()
     try:
         out = []
         for s in _rows(conn, sql + " ORDER BY s.pickup_appt_start DESC", *args):
             ms = _milestones(conn, s["id"])
-            out.append({**s, "milestones": ms, "last_milestone": ms[-1] if ms else None})
+            out.append({**s, "milestones": ms, "last_milestone": ms[-1] if ms else None,
+                        "tracking_alert": _tracking_alert(s, ms)})
         return out
     finally:
         conn.close()
@@ -148,13 +196,13 @@ def get_shipment(shipment_id: str):
         load = _row(conn, "SELECT * FROM loads WHERE id = ?", s["load_id"]) if s["load_id"] else None
         driver = (_row(conn, "SELECT * FROM drivers WHERE id = ?", load["driver_id"])
                   if load and load["driver_id"] else None)
+        ms = _milestones(conn, shipment_id)
         return {
             **s,
             "customer": _row(conn, "SELECT * FROM customers WHERE code = ?", s["customer_code"]),
             "load": load, "driver": driver,
-            "milestones": _milestones(conn, shipment_id),
-            "notes": _rows(conn, "SELECT * FROM notes WHERE entity_type = 'shipment' AND entity_id = ? "
-                                 "ORDER BY id DESC", shipment_id),
+            "milestones": ms, "tracking_alert": _tracking_alert(s, ms),
+            "notes": _notes(conn, "shipment", shipment_id),
         }
     finally:
         conn.close()
@@ -165,10 +213,9 @@ class ShipmentUpdate(BaseModel):
     driver_name: Optional[str] = None
     delivery_appt_start: Optional[str] = Field(None, description="ISO time, e.g. 2026-10-14T13:00:00-07:00")
     delivery_appt_end: Optional[str] = None
-    agent_status: AgentStatus = None
-    clear_agent_status: bool = Field(False, description="Set true to clear agent_status")
     reason: str = Field(..., description="Why the change is made; saved as a note")
-    source_ref: Optional[str] = Field(None, description="Email subject or ID that led to the change")
+    source_ref: Optional[str] = Field(None, description="Email subject, ticket or other reference")
+    author: Optional[str] = Field(None, description="Who made the change, for the note")
 
 
 @router.patch("/shipments/{shipment_id}", dependencies=[Depends(require_api_key)],
@@ -177,10 +224,7 @@ def update_shipment(shipment_id: str, body: ShipmentUpdate):
     conn = get_db()
     try:
         s = _shipment_or_404(conn, shipment_id)
-        changes = body.model_dump(exclude_none=True,
-                                  exclude={"reason", "source_ref", "clear_agent_status"})
-        if body.clear_agent_status:
-            changes["agent_status"] = None
+        changes = body.model_dump(exclude_none=True, exclude={"reason", "source_ref", "author"})
         for f in ("delivery_appt_start", "delivery_appt_end"):
             if f in changes:
                 try:
@@ -192,7 +236,8 @@ def update_shipment(shipment_id: str, body: ShipmentUpdate):
         sets = ", ".join(f"{k} = :{k}" for k in changes)
         conn.execute(f"UPDATE shipments SET {sets}, updated_at = :u WHERE id = :id",
                      {**changes, "u": stamp(), "id": shipment_id})
-        _note(conn, "shipment", shipment_id, "update", f"{body.reason} ({_diff(s, changes)})", body.source_ref)
+        _note(conn, "shipment", shipment_id, "update", f"{body.reason} ({_diff(s, changes)})",
+              body.source_ref, author=body.author or STAFF)
         conn.commit()
     finally:
         conn.close()
@@ -204,14 +249,15 @@ class MilestoneIn(BaseModel):
     event_time: str = Field(..., description="When it happened, ISO time, e.g. 2026-10-14T14:05:00-07:00")
     location: Optional[str] = None
     label: Optional[str] = Field(None, description="Text shown on the timeline; defaults from the code")
-    source: Literal["carrier", "customer", "agent", "system"] = "carrier"
-    reason: str = Field(..., description="How the agent learned this; saved as a note")
+    source: Literal["carrier", "customer", "agent", "system", "staff"] = "carrier"
+    reason: str = Field(..., description="How this was learned; saved as a note")
     source_ref: Optional[str] = None
+    author: Optional[str] = None
 
 
 @router.post("/shipments/{shipment_id}/milestones", status_code=201,
              dependencies=[Depends(require_api_key)],
-             summary="Record a milestone (also updates the shipment status)")
+             summary="Record a tracking milestone (also updates the shipment status)")
 def add_milestone(shipment_id: str, body: MilestoneIn):
     conn = get_db()
     try:
@@ -244,7 +290,8 @@ def add_milestone(shipment_id: str, body: MilestoneIn):
         )
         _refresh_status(conn, shipment_id)
         _note(conn, "shipment", shipment_id, "milestone",
-              f"{default_label(body.code)} at {_friendly_time(iso(when))}. {body.reason}", body.source_ref)
+              f"{default_label(body.code)} at {_friendly_time(iso(when))}. {body.reason}", body.source_ref,
+              author=body.author or STAFF)
         conn.commit()
     finally:
         conn.close()
@@ -289,16 +336,26 @@ def get_driver(driver_id: int):
     return d
 
 
-# ── orders (orders.csv) ──────────────────────────────────────────────
+# ── orders ───────────────────────────────────────────────────────────
 
-@router.get("/orders", summary="Orders, paged")
-def list_orders(limit: int = Query(50, le=500), offset: int = 0):
+@router.get("/orders", summary="Orders, paged, newest first")
+def list_orders(limit: int = Query(50, le=500), offset: int = 0,
+                customer_code: Optional[str] = None,
+                source: Optional[Literal["csv", "portal"]] = None):
+    sql, args = "FROM orders WHERE 1=1", []
+    if customer_code:
+        sql, args = sql + " AND customer_code = ?", args + [customer_code]
+    if source:
+        sql, args = sql + " AND source = ?", args + [source]
     conn = get_db()
     try:
-        total = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
-        items = _rows(conn, "SELECT * FROM orders ORDER BY id LIMIT ? OFFSET ?", limit, offset)
+        total = conn.execute("SELECT COUNT(*) " + sql, args).fetchone()[0]
+        items = _rows(conn, "SELECT * " + sql + " ORDER BY created_at DESC, id LIMIT ? OFFSET ?",
+                      *args, limit, offset)
     finally:
         conn.close()
+    for o in items:
+        o["quote_status"] = _quote_status(o)
     return {"total": total, "items": items}
 
 
@@ -307,41 +364,32 @@ def get_order(order_id: str):
     conn = get_db()
     try:
         o = _order_or_404(conn, order_id)
-        o["notes"] = _rows(conn, "SELECT * FROM notes WHERE entity_type = 'order' AND entity_id = ? "
-                                 "ORDER BY id DESC", order_id)
+        o["quote_status"] = _quote_status(o)
+        o["notes"] = _notes(conn, "order", order_id)
         return o
     finally:
         conn.close()
 
 
-ORDER_FIELDS = ["origin_zip", "dest_zip", "origin_country", "dest_country", "status",
-                "fuel_surcharge_percent", "quote", "skid_dims", "skid_details",
-                "freight_class", "weight_lbs"]
-
-
 class OrderUpdate(BaseModel):
     origin_zip: Optional[str] = None
-    dest_zip: Optional[str] = None
+    origin_state: Optional[str] = None
     origin_country: Optional[str] = None
+    dest_zip: Optional[str] = None
+    dest_state: Optional[str] = None
     dest_country: Optional[str] = None
     status: Optional[str] = None
     fuel_surcharge_percent: Optional[str] = None
     quote: Optional[str] = None
+    pallet_count: Optional[str] = None
     skid_dims: Optional[str] = Field(None, description="e.g. 48x40x50")
     skid_details: Optional[str] = Field(None, description="e.g. 2 pallets, stackable")
     freight_class: Optional[str] = None
     weight_lbs: Optional[str] = None
-    agent_status: AgentStatus = None
-    clear_agent_status: bool = False
+    commodity: Optional[str] = None
     reason: str
     source_ref: Optional[str] = None
-
-
-def _apply_order_changes(conn, order: dict, changes: dict, reason: str, source_ref=None):
-    sets = ", ".join(f"{k} = :{k}" for k in changes)
-    conn.execute(f"UPDATE orders SET {sets}, last_updated_timestamp = :u WHERE id = :id",
-                 {**changes, "u": stamp(), "id": order["id"]})
-    _note(conn, "order", order["id"], "update", f"{reason} ({_diff(order, changes)})", source_ref)
+    author: Optional[str] = None
 
 
 @router.patch("/orders/{order_id}", dependencies=[Depends(require_api_key)],
@@ -350,77 +398,71 @@ def update_order(order_id: str, body: OrderUpdate):
     conn = get_db()
     try:
         o = _order_or_404(conn, order_id)
-        changes = body.model_dump(exclude_none=True,
-                                  exclude={"reason", "source_ref", "clear_agent_status"})
-        if body.clear_agent_status:
-            changes["agent_status"] = None
+        changes = body.model_dump(exclude_none=True, exclude={"reason", "source_ref", "author"})
         if not changes:
             raise HTTPException(422, "Nothing to change.")
-        _apply_order_changes(conn, o, changes, body.reason, body.source_ref)
+        sets = ", ".join(f"{k} = :{k}" for k in changes)
+        conn.execute(f"UPDATE orders SET {sets}, last_updated_timestamp = :u WHERE id = :id",
+                     {**changes, "u": stamp(), "id": order_id})
+        _note(conn, "order", order_id, "update", f"{body.reason} ({_diff(o, changes)})", body.source_ref,
+              author=body.author or STAFF)
         conn.commit()
     finally:
         conn.close()
     return get_order(order_id)
 
 
-class ApproveFixIn(BaseModel):
-    field: Literal["origin_country", "dest_country", "origin_zip", "dest_zip", "origin_state", "dest_state",
-                   "weight_lbs", "pallet_count", "skid_dims", "freight_class"]
-    value: str
-    approved_by: str = "Operations"
-
-
-@router.post("/orders/{order_id}/approve-fix", dependencies=[Depends(require_api_key)],
-             summary="A person approves a suggested fix (e.g. a likely country or a freight class)")
-def approve_fix(order_id: str, body: ApproveFixIn):
-    conn = get_db()
-    try:
-        o = _order_or_404(conn, order_id)
-        conn.execute(f"UPDATE orders SET {body.field} = ?, last_updated_timestamp = ? WHERE id = ?",
-                     (body.value, stamp(), order_id))
-        _note(conn, "order", order_id, "update",
-              f"Approved suggestion ({_diff(o, {body.field: body.value})})", None, author=body.approved_by)
-        conn.commit()
-    finally:
-        conn.close()
-    return get_order(order_id)
-
-
-# ── notes (the agent's activity log) ─────────────────────────────────
+# ── notes ────────────────────────────────────────────────────────────
 
 class NoteIn(BaseModel):
     entity_type: Literal["shipment", "order", "customer"]
     entity_id: str
-    action: str = Field(..., description="Short tag, e.g. 'email_received', 'asked_carrier', 'handoff'")
-    message: str
+    message: str = Field(..., max_length=5000)
+    action: str = Field("note", description="Short tag, e.g. 'note', 'email_received', 'handoff'")
+    visibility: Visibility = Field("internal", description="'customer' also shows the note in the portal")
+    author: str = STAFF
+    author_type: AuthorType = "staff"
     source_ref: Optional[str] = None
-    author: str = AGENT
+
+
+def _entity_exists(conn, entity_type, entity_id) -> bool:
+    table, key = {"shipment": ("shipments", "id"), "order": ("orders", "id"),
+                  "customer": ("customers", "code")}[entity_type]
+    return bool(_row(conn, f"SELECT 1 AS x FROM {table} WHERE {key} = ?", entity_id))
 
 
 @router.post("/notes", status_code=201, dependencies=[Depends(require_api_key)],
-             summary="Add a note to the activity log")
+             summary="Add a note to a shipment, order or customer")
 def add_note(body: NoteIn):
     conn = get_db()
     try:
-        _note(conn, body.entity_type, body.entity_id, body.action, body.message,
-              body.source_ref, body.author)
+        if not _entity_exists(conn, body.entity_type, body.entity_id):
+            raise HTTPException(404, f"{body.entity_type} {body.entity_id} not found.")
+        note_id = _note(conn, body.entity_type, body.entity_id, body.action, body.message,
+                        body.source_ref, body.author, body.author_type, body.visibility)
         conn.commit()
-        return _row(conn, "SELECT * FROM notes ORDER BY id DESC LIMIT 1")
+        return _row(conn, "SELECT * FROM notes WHERE id = ?", note_id)
     finally:
         conn.close()
 
 
-@router.get("/notes", summary="Recent activity, newest first (optionally for one record)")
+@router.get("/notes", summary="Notes, newest first (or oldest first with order=asc)")
 def list_notes(entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+               author_type: Optional[str] = None, visibility: Optional[str] = None,
+               action: Optional[str] = None,
+               after_id: Optional[int] = Query(None, description="Only notes with a higher id"),
+               order: Literal["asc", "desc"] = "desc",
                limit: int = Query(50, le=500)):
     sql, args = "SELECT * FROM notes WHERE 1=1", []
-    if entity_type:
-        sql, args = sql + " AND entity_type = ?", args + [entity_type]
-    if entity_id:
-        sql, args = sql + " AND entity_id = ?", args + [entity_id]
+    for field, value in (("entity_type", entity_type), ("entity_id", entity_id),
+                         ("author_type", author_type), ("visibility", visibility), ("action", action)):
+        if value:
+            sql, args = sql + f" AND {field} = ?", args + [value]
+    if after_id is not None:
+        sql, args = sql + " AND id > ?", args + [after_id]
     conn = get_db()
     try:
-        return _rows(conn, sql + " ORDER BY id DESC LIMIT ?", *args, limit)
+        return _rows(conn, sql + f" ORDER BY id {order.upper()} LIMIT ?", *args, limit)
     finally:
         conn.close()
 
@@ -433,46 +475,8 @@ def reset():
     return reset_demo()
 
 
-@router.get("/stats", summary="Numbers for the Agent Activity page")
-def stats():
-    conn = get_db()
-    try:
-        def by_status(table):
-            return {r["agent_status"]: r["n"] for r in _rows(
-                conn, f"SELECT agent_status, COUNT(*) AS n FROM {table} "
-                      "WHERE agent_status IS NOT NULL GROUP BY agent_status")}
-        open_exceptions = []
-        for s in _rows(conn, "SELECT * FROM shipments WHERE status != 'Delivered' "
-                             "ORDER BY pickup_appt_start DESC"):
-            customer = _row(conn, "SELECT * FROM customers WHERE code = ?", s["customer_code"])
-            load = _row(conn, "SELECT * FROM loads WHERE id = ?", s["load_id"]) if s["load_id"] else None
-            driver = (_row(conn, "SELECT * FROM drivers WHERE id = ?", load["driver_id"])
-                      if load and load["driver_id"] else None)
-            result = checks.check_shipment(s, _milestones(conn, s["id"]), customer, load, driver, None)
-            if result["recommendation"] != "answer_from_tms":
-                open_exceptions.append({"shipment_id": s["id"], "route": f"{s['origin']} → {s['destination']}",
-                                        "recommendation": result["recommendation"],
-                                        "summary": result["summary"], "agent_status": s["agent_status"]})
-        orders = _rows(conn, "SELECT * FROM orders")
-        order_issues = [i for o in orders for i in checks.check_order(o)]
-        return {
-            "as_of": iso(now()),
-            "notes_total": conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0],
-            "shipments_updated": conn.execute(
-                "SELECT COUNT(DISTINCT entity_id) FROM notes WHERE entity_type = 'shipment'").fetchone()[0],
-            "orders_updated": conn.execute(
-                "SELECT COUNT(DISTINCT entity_id) FROM notes WHERE entity_type = 'order'").fetchone()[0],
-            "shipments_by_agent_status": by_status("shipments"),
-            "orders_by_agent_status": by_status("orders"),
-            "open_exceptions": open_exceptions,
-            "order_data_quality": checks.summarize_order_issues(order_issues)["by_fix_class"],
-        }
-    finally:
-        conn.close()
-
-
 @router.get("/auth/check", dependencies=[Depends(require_api_key)],
-            summary="Is this API key valid? (used by the ops sign-in)")
+            summary="Is this API key valid? (used by the operations sign-in)")
 def auth_check():
     return {"ok": True}
 
@@ -482,107 +486,138 @@ def milestone_codes():
     return [{"code": c, "label": v[1], "status_when_reached": v[2]} for c, v in MILESTONES.items()]
 
 
-# ── agent tools ──────────────────────────────────────────────────────
+@router.get("/events/status", summary="Outbound event subscription and recent deliveries")
+def events_status():
+    return events.status()
 
-@tools.get("/shipments/{shipment_id}/check",
-           summary="What should the agent do about this shipment?")
-def check_shipment(shipment_id: str,
-                   sender: Optional[str] = Query(None, description="Email address the request came from")):
+
+# ── customer portal ──────────────────────────────────────────────────
+
+def _customer_or_404(conn, code):
+    c = _row(conn, "SELECT * FROM customers WHERE code = ?", code)
+    if not c:
+        raise HTTPException(404, f"Customer {code} not found.")
+    return c
+
+
+@portal.get("/shipments", summary="A customer's shipments")
+def portal_shipments(customer_code: str = "NFAS"):
+    return list_shipments(customer_code=customer_code, status=None)
+
+
+@portal.get("/shipments/{shipment_id}", summary="One of the customer's shipments, with customer-visible notes")
+def portal_shipment(shipment_id: str, customer_code: str = "NFAS"):
     conn = get_db()
     try:
         s = _shipment_or_404(conn, shipment_id)
-        customer = _row(conn, "SELECT * FROM customers WHERE code = ?", s["customer_code"])
-        load = _row(conn, "SELECT * FROM loads WHERE id = ?", s["load_id"]) if s["load_id"] else None
-        driver = (_row(conn, "SELECT * FROM drivers WHERE id = ?", load["driver_id"])
-                  if load and load["driver_id"] else None)
-        return checks.check_shipment(s, _milestones(conn, shipment_id), customer, load, driver, sender)
+        if s["customer_code"] != customer_code:
+            raise HTTPException(404, f"Shipment {shipment_id} not found.")
+        ms = _milestones(conn, shipment_id)
+        return {**s, "milestones": ms, "tracking_alert": _tracking_alert(s, ms),
+                "notes": _notes(conn, "shipment", shipment_id, customer_only=True)}
     finally:
         conn.close()
 
 
-class ApplyFixesIn(BaseModel):
-    source_ref: Optional[str] = Field(None, description="e.g. the case ID, saved with the change")
+@portal.get("/orders", summary="A customer's orders and quote requests, newest first")
+def portal_orders(customer_code: str = "NFAS", limit: int = Query(25, le=200)):
+    return list_orders(limit=limit, offset=0, customer_code=customer_code, source=None)
 
 
-@tools.post("/shipments/{shipment_id}/apply-fixes", dependencies=[Depends(require_api_key)],
-            summary="Apply the safe fixes the shipment check found in other TMS records")
-def apply_shipment_fixes(shipment_id: str, body: Optional[ApplyFixesIn] = None):
-    result = check_shipment(shipment_id, sender=None)
-    fixes = [f for f in result["internal_fixes"] if f["fix_class"] == "auto"]
-    if fixes:
-        changes = {f["field"]: f["value"] for f in fixes}
-        conn = get_db()
-        try:
-            s = _shipment_or_404(conn, shipment_id)
-            sets = ", ".join(f"{k} = :{k}" for k in changes)
-            conn.execute(f"UPDATE shipments SET {sets}, updated_at = :u WHERE id = :id",
-                         {**changes, "u": stamp(), "id": shipment_id})
-            _note(conn, "shipment", shipment_id, "update",
-                  f"Filled in from TMS records. {fixes[0]['evidence']} ({_diff(s, changes)})",
-                  body.source_ref if body else None)
-            conn.commit()
-        finally:
-            conn.close()
-    return {"applied": {f["field"]: f["value"] for f in fixes}, "shipment": get_shipment(shipment_id)}
-
-
-@tools.get("/orders/{order_id}/check", summary="Data-quality findings for one order")
-def check_order(order_id: str):
+@portal.get("/orders/{order_id}", summary="One of the customer's orders, with customer-visible notes")
+def portal_order(order_id: str, customer_code: str = "NFAS"):
     conn = get_db()
     try:
         o = _order_or_404(conn, order_id)
+        if o["customer_code"] != customer_code:
+            raise HTTPException(404, f"Order {order_id} not found.")
+        o["quote_status"] = _quote_status(o)
+        o["notes"] = _notes(conn, "order", order_id, customer_only=True)
+        return o
     finally:
         conn.close()
-    issues = checks.check_order(o)
-    return {"order_id": order_id, "recommendation": checks.order_recommendation(issues),
-            "issues": issues}
 
 
-@tools.get("/orders/data-quality", summary="Sweep every order and report all findings")
-def data_quality_report():
+class QuoteRequestIn(BaseModel):
+    customer_code: str = "NFAS"
+    origin_zip: str = Field(..., max_length=20)
+    origin_state: str = Field("", max_length=40)
+    origin_country: str = Field("", max_length=40)
+    dest_zip: str = Field(..., max_length=20)
+    dest_state: str = Field("", max_length=40)
+    dest_country: str = Field("", max_length=40)
+    weight: str = Field(..., max_length=30, description="As typed, e.g. '1,200 lbs'")
+    pallet_count: str = Field("", max_length=20)
+    pallet_size: str = Field("", max_length=40, description="As typed, e.g. '48 x 40 x 50 in'")
+    freight_class: str = Field("", max_length=10)
+    commodity: str = Field("", max_length=80)
+    stackable: bool = False
+    urgent: bool = False
+    appointment: bool = False
+    notes: str = Field("", max_length=2000, description="Anything else, saved as a note on the order")
+
+
+@portal.post("/orders", status_code=201, summary="Request a quote: the customer submits a new order")
+def portal_new_order(body: QuoteRequestIn, background: BackgroundTasks):
     conn = get_db()
     try:
-        orders = _rows(conn, "SELECT * FROM orders ORDER BY id")
+        customer = _customer_or_404(conn, body.customer_code)
+        while True:
+            order_id = f"SHP{random.randint(10000, 99999)}"
+            if not _row(conn, "SELECT id FROM orders WHERE id = ?", order_id):
+                break
+        t = stamp()
+        values = {
+            "id": order_id, "customer_code": body.customer_code,
+            "origin_zip": body.origin_zip.strip(), "origin_state": body.origin_state.strip(),
+            "origin_country": body.origin_country.strip(), "dest_zip": body.dest_zip.strip(),
+            "dest_state": body.dest_state.strip(), "dest_country": body.dest_country.strip(),
+            "weight_lbs": body.weight.strip(), "pallet_count": body.pallet_count.strip(),
+            "skid_dims": body.pallet_size.strip(), "freight_class": body.freight_class.strip(),
+            "commodity": body.commodity.strip(), "is_stackable": str(body.stackable),
+            "is_urgent": str(body.urgent), "delivery_appointment": str(body.appointment),
+            "status": "pending", "base_rate_per_mile_cwt": "0.1", "fuel_surcharge_percent": "20.0",
+            "accessorial_charges": "0.0", "driver_id": "", "vendor_id": "", "skid_details": "",
+            "quote": "", "created_at": t, "last_updated_timestamp": t, "source": "portal",
+        }
+        conn.execute(f"INSERT INTO orders ({', '.join(values)}) VALUES ({', '.join('?' for _ in values)})",
+                     list(values.values()))
+        who = customer["contact"] or "Customer"
+        _note(conn, "order", order_id, "order_submitted", "Quote request submitted through the portal.",
+              author=who, author_type="customer", visibility="customer")
+        if body.notes.strip():
+            _note(conn, "order", order_id, "order_instructions", body.notes.strip(),
+                  author=who, author_type="customer", visibility="customer")
+        conn.commit()
     finally:
         conn.close()
-    issues = [i for o in orders for i in checks.check_order(o)]
-    unassigned = sum(1 for o in orders if not (o["driver_id"] or "").strip())
-    return {
-        "checked_at": iso(now()), "orders_checked": len(orders),
-        "orders_with_issues": len({i["order_id"] for i in issues}),
-        **checks.summarize_order_issues(issues),
-        "info": {"orders_without_driver": unassigned},
-        "issues": issues,
-    }
+    order = get_order(order_id)
+    # Tell subscribers (the plugin) about the new order. Runs after the response is sent.
+    background.add_task(events.send, "order.submitted",
+                        {"order_id": order_id, "customer_code": body.customer_code, "order": order})
+    return order
 
 
-@tools.post("/orders/apply-safe-fixes", dependencies=[Depends(require_api_key)],
-            summary="Apply every 'auto' fix across all orders (dry_run=true only previews)")
-def apply_safe_fixes(dry_run: bool = True, source_ref: Optional[str] = None):
+class PortalNoteIn(BaseModel):
+    customer_code: str = "NFAS"
+    entity_type: Literal["shipment", "order"]
+    entity_id: str
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+@portal.post("/notes", status_code=201, summary="Customer adds a note to one of their shipments or orders")
+def portal_add_note(body: PortalNoteIn):
     conn = get_db()
     try:
-        orders = _rows(conn, "SELECT * FROM orders ORDER BY id")
-        applied, remaining = [], []
-        for o in orders:
-            issues = checks.check_order(o)
-            auto = {i["field"]: i["suggested"] for i in issues
-                    if i["fix_class"] == "auto" and i["suggested"] is not None}
-            remaining += [i for i in issues if i["fix_class"] != "auto"]
-            if auto:
-                applied.append({"order_id": o["id"],
-                                "changes": {k: {"from": o[k], "to": v} for k, v in auto.items()}})
-                if not dry_run:
-                    _apply_order_changes(conn, o, auto, "Data sweep: safe automatic fix", source_ref)
-        if not dry_run:
-            conn.commit()
+        customer = _customer_or_404(conn, body.customer_code)
+        table = "shipments" if body.entity_type == "shipment" else "orders"
+        rec = _row(conn, f"SELECT customer_code FROM {table} WHERE id = ?", body.entity_id)
+        if not rec or rec["customer_code"] != body.customer_code:
+            raise HTTPException(404, f"{body.entity_type} {body.entity_id} not found.")
+        note_id = _note(conn, body.entity_type, body.entity_id, "note", body.message.strip(),
+                        author=customer["contact"] or "Customer", author_type="customer",
+                        visibility="customer")
+        conn.commit()
+        return _row(conn, "SELECT * FROM notes WHERE id = ?", note_id)
     finally:
         conn.close()
-    return {
-        "dry_run": dry_run,
-        "orders_fixed": len(applied),
-        "fields_fixed": sum(len(a["changes"]) for a in applied),
-        "applied": applied,
-        "still_open": checks.summarize_order_issues(remaining),
-        "ask_customer": [i for i in remaining if i["fix_class"] == "ask_customer"],
-        "needs_human": [i for i in remaining if i["fix_class"] == "needs_human"],
-    }

@@ -9,13 +9,6 @@ const STATUS_COLOR  = { 'In Transit': 'var(--blue-brand)', 'Delivered': 'var(--g
 const STATUS_BG     = { 'In Transit': 'rgba(28,142,232,0.1)', 'Delivered': 'rgba(16,185,129,0.1)', 'Pending': 'rgba(245,158,11,0.1)', 'Invoiced ✓': 'rgba(16,185,129,0.1)', 'Booked': 'rgba(245,158,11,0.1)', 'At Pickup': 'rgba(245,158,11,0.1)', 'At Delivery': 'rgba(28,142,232,0.1)' };
 const STATUS_BORDER = { 'In Transit': 'rgba(28,142,232,0.25)', 'Delivered': 'rgba(16,185,129,0.25)', 'Pending': 'rgba(245,158,11,0.25)', 'Invoiced ✓': 'rgba(16,185,129,0.25)', 'Booked': 'rgba(245,158,11,0.25)', 'At Pickup': 'rgba(245,158,11,0.25)', 'At Delivery': 'rgba(28,142,232,0.25)' };
 
-// What the customer sees while the agent is working on their shipment.
-const AGENT_NOTE = {
-  awaiting_carrier:  'We are checking with the carrier',
-  awaiting_customer: 'Waiting for your reply',
-  needs_human:       'Our operations team is on it',
-};
-
 const SOURCE_NOTE = { carrier: 'Confirmed by the carrier', agent: 'Updated by our team', customer: 'From you' };
 
 // Turns a shipment from the TMS API into the shape the cards below use.
@@ -48,7 +41,6 @@ function toCard(s) {
     carrier: s.carrier_name,
     pickupWindow: fmtWindow(s.pickup_appt_start, s.pickup_appt_end),
     deliveryWindow: fmtWindow(s.delivery_appt_start, s.delivery_appt_end),
-    agentStatus: s.agent_status,
     updatedAt: s.updated_at,
     events: [...done, ...pending],
     live: true,
@@ -227,7 +219,7 @@ function ShipPane({ shipments, live }) {
   const [selectedId, setSelectedId] = useState(null);
   const toggle = id => setSelectedId(prev => prev === id ? null : id);
   const now = useNow(1000);
-  // Cards the agent changes while you watch glow once.
+  // Cards that change while you watch glow once.
   const fresh = useFreshIds(live.connected ? shipments : null, s => `${s.id}|${s.updatedAt || ''}`);
 
   return (
@@ -254,9 +246,6 @@ function ShipPane({ shipments, live }) {
                 <div className="mship-id">{s.id}</div>
                 <div className="mship-route">{s.origin} → {s.dest}</div>
                 <div className="mship-meta">{s.driver} · {s.commodity} · {s.weight} · ETA {s.eta}</div>
-                {s.agentStatus && AGENT_NOTE[s.agentStatus] && (
-                  <div className="mship-agent">{AGENT_NOTE[s.agentStatus]}</div>
-                )}
               </div>
               <div className="mship-right">
                 <div className="mship-amount">{s.amount}</div>

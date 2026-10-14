@@ -184,6 +184,7 @@
 .tms-msg-who { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .tms-msg-tag { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; background: var(--agent-bg); color: var(--agent); }
 .tms-msg-tag.ops { background: var(--info-bg); color: var(--info); }
+.tms-msg-tag.plain { background: var(--line-2); color: var(--ink-2); }
 .tms-msg-body { margin-top: 2px; white-space: pre-wrap; }
 .tms-msg.system .tms-msg-body { color: var(--ink-3); font-size: 12.5px; }
 .tms-msg.fresh { animation: tmsFresh 5s ease-out both; }
