@@ -27,7 +27,7 @@ from backend.tms.seed import reset_demo
 router = APIRouter(prefix="/api", tags=["TMS"])
 portal = APIRouter(prefix="/api/portal", tags=["Customer portal"])
 
-STAFF = "TruckerPath Operations"
+STAFF = "Qubiway Operations"
 AuthorType = Literal["customer", "staff", "carrier", "integration", "system"]
 Visibility = Literal["internal", "customer"]
 
@@ -709,7 +709,7 @@ def print_rate_confirmation(shipment_id: str):
             + "</table><table><tr><th>Charge</th><th>Description</th><th style='text-align:right'>Amount</th></tr>"
             + pay + f"<tr><th colspan='2'>Total carrier pay</th><th style='text-align:right'>${ch['carrier_total']:,.2f}</th></tr></table>"
             "<p>Carrier must send check calls daily and the signed POD within 24 hours of delivery.</p>"
-            "<div class='sign'><div>Carrier signature and date</div><div>TruckerPath Operations</div></div>")
+            "<div class='sign'><div>Carrier signature and date</div><div>Qubiway Operations</div></div>")
     return _page(f"Rate confirmation {s['id']}", body)
 
 

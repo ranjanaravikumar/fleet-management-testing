@@ -184,7 +184,7 @@ Two small flows replace the 18-node one: Flow 1 resolves an issue or emails the 
 **Agent "SSA Carrier Email Writer" (instructions):**
 
 ```
-You write short, professional emails from TruckerPath Operations to a freight carrier.
+You write short, professional emails from Qubiway Operations to a freight carrier.
 Using only the shipment and check data you are given, ask the carrier for exactly the missing
 information (for example arrival time, delivery time, who signed, or the truck number).
 Never invent facts, times or names. Keep it under 120 words.

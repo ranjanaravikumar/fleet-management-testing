@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="TruckerPath TMS", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Qubiway TMS", version="2.0.0", lifespan=lifespan)
 
 # CORS — which web pages may call this API from a browser.
 # Comma-separated list in CORS_ORIGINS; the Vite dev server by default.

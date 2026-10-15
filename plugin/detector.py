@@ -62,7 +62,7 @@ def run_detector() -> dict:
             message = f"{found_text} {check['summary']}"
             case_id, created = cases.create_case(
                 customer_code=None, shipment_id=s["id"], order_id=None, channel="monitor", category=category,
-                message=message, author_name="TruckerPath monitoring", author_type="system")
+                message=message, author_name="Qubiway monitoring", author_type="system")
             conn = store.get_db()
             try:
                 for p in problems:

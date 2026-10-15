@@ -43,5 +43,5 @@ CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localh
 
 # How the plugin signs what it writes into the TMS.
 AGENT_NAME = "SMART API Agent"          # internal notes and record changes
-SUPPORT_NAME = "TruckerPath Support"    # messages the customer sees
-OPS_NAME = "TruckerPath Operations"
+SUPPORT_NAME = "Qubiway Support"    # messages the customer sees
+OPS_NAME = "Qubiway Operations"

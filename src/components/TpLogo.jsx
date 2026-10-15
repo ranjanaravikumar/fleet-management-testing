@@ -4,7 +4,7 @@ export default function TpLogo({ size = 36 }) {
   return (
     <img
       src={logo}
-      alt="TruckerPath"
+      alt="Qubiway"
       style={{ width: size, height: size, display: 'block', flexShrink: 0, borderRadius: size * 0.2 }}
     />
   );

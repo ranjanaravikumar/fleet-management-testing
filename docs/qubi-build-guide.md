@@ -86,7 +86,7 @@ The plugin sends this body, with the secret in the `X-Trigger-Secret` header:
 `event` is `case.created` for a new case, or `case.customer_replied` when the
 customer answers with a note. Workflow A branches on it first. A case the
 detector opened has `"channel": "monitor"`; its first message, from
-"TruckerPath monitoring", says what was found (e.g. "Delivered overdue by
+"Qubiway monitoring", says what was found (e.g. "Delivered overdue by
 124 min"). The flow handles it like any other case.
 
 **No webhook yet?** Use a polling trigger that calls `GET /api/cases?status=new`
@@ -138,7 +138,7 @@ Asking for details, as in Act 4:
 **Reply writer (AI step):**
 
 ```
-Write a short, friendly message from TruckerPath Support to the customer.
+Write a short, friendly message from Qubiway Support to the customer.
 Use only the facts given; never invent times, names or numbers.
 Under 80 words. Plain text, no greeting line, no signature.
 
@@ -160,7 +160,7 @@ delivery recorded. Please reply with the arrival time, the delivery time
 and who signed for it.
 
 Thank you,
-TruckerPath Operations
+Qubiway Operations
 ```
 
 ### When the customer replies (event `case.customer_replied`, Act 4)
@@ -247,7 +247,7 @@ demo run to show the safety option, then off to show full speed.
 
 Customer portal: sign in at `/tms` and choose **Continue as customer**. The
 customer asks by adding a note in a record's **Notes** tab; the agent's
-answer appears there as a note from TruckerPath Support.
+answer appears there as a note from Qubiway Support.
 
 With the detector on (the default), Acts 1 and 2 start **by themselves**
 within a minute of a reset: the detector sees SHP-1042's overdue delivery and

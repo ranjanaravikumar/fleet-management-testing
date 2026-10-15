@@ -26,7 +26,7 @@ ORDERS_CSV = os.environ.get("TMS_ORDERS_CSV", os.path.join(HERE, "..", "..", "or
 CUSTOMER_EMAIL = os.environ.get("DEMO_CUSTOMER_EMAIL", "northfield-shipping@example.com")
 CARRIER_EMAIL = os.environ.get("DEMO_CARRIER_EMAIL", "carrier-dispatch@example.com")
 
-OWN_FLEET = "TruckerPath Fleet Dispatch"
+OWN_FLEET = "Qubiway Fleet Dispatch"
 
 # The demo customer for Acts 1, 2 and 4. None of the three mock companies has a
 # usable email address, so the demo needs one customer it can actually email.

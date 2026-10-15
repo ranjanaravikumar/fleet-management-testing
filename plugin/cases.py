@@ -140,7 +140,7 @@ def _note_text(body: str, form: dict | None) -> str:
 def post_to_customer(conn, c: dict, author_type: str, body: str, form=None, author_name=None):
     """Write an agent or ops message into the TMS (customer-visible note), then into the case."""
     name = author_name or {"agent": config.SUPPORT_NAME, "ops": config.OPS_NAME,
-                           "system": "TruckerPath"}[author_type]
+                           "system": "Qubiway"}[author_type]
     kind, ent_id = _entity(c)
     note = tms_client.add_note(kind, ent_id, _note_text(body, form), action="message", visibility="customer",
                                author=name, author_type="integration" if author_type == "agent" else "staff",
@@ -203,10 +203,10 @@ def create_case(*, customer_code, shipment_id, order_id, channel, category, mess
                 (case_id, customer_code, shipment_id, order_id, channel, category, subject, "new",
                  sender_email, external_ref, t, t),
             )
-            name = author_name or (_contact(customer_code) if author_type == "customer" else "TruckerPath")
+            name = author_name or (_contact(customer_code) if author_type == "customer" else "Qubiway")
             _insert_message(conn, case_id, author_type, name, message or CATEGORIES[category],
                             tms_note_id=tms_note_id)
-            _insert_message(conn, case_id, "system", "TruckerPath",
+            _insert_message(conn, case_id, "system", "Qubiway",
                             f"Case {case_id} opened. Our team is on it; updates will appear here.")
             conn.commit()
             return case_id, True
@@ -514,7 +514,7 @@ def add_message(case_id: str, body: MessageIn):
         try:
             c = load_case(conn, case_id)
             if body.author_type == "system":
-                _insert_message(conn, case_id, "system", body.author_name or "TruckerPath", body.body)
+                _insert_message(conn, case_id, "system", body.author_name or "Qubiway", body.body)
             else:
                 post_to_customer(conn, c, body.author_type, body.body, form=body.form,
                                  author_name=body.author_name)

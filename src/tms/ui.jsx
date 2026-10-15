@@ -35,7 +35,7 @@ export function TopBar({ area }) {
     <header className="tms-top">
       <div className="tms-brand">
         <span className="tms-brand-mark" aria-hidden="true">TP</span>
-        TruckerPath <small>{area === 'ops' ? 'Operations' : 'Customer Portal'}</small>
+        Qubiway <small>{area === 'ops' ? 'Operations' : 'Customer Portal'}</small>
       </div>
       <form className="tms-search" onSubmit={search} role="search">
         <input value={q} onChange={e => setQ(e.target.value)} aria-label="Find a shipment or order"
@@ -136,7 +136,7 @@ export function RecordTabs({ tabs, tab, onChange }) {
 export function Timeline({ shipment }) {
   const done = shipment.milestones.map(m => ({
     key: `m${m.id}`, label: m.label, meta: fmtDateTime(m.event_time),
-    src: m.source === 'carrier' ? 'Confirmed by carrier' : m.source === 'agent' || m.source === 'staff' ? 'Updated by TruckerPath' : null,
+    src: m.source === 'carrier' ? 'Confirmed by carrier' : m.source === 'agent' || m.source === 'staff' ? 'Updated by Qubiway' : null,
     state: 'done',
   }));
   const reached = new Set(shipment.milestones.map(m => m.code));
@@ -198,7 +198,7 @@ export function NotesPanel({ notes, entityType, entityId, customerCode, perspect
         const session = getSession();
         await api.post('/api/notes', {
           entity_type: entityType, entity_id: entityId, message: text.trim(), visibility,
-          author: session?.name || 'TruckerPath Operations', author_type: 'staff',
+          author: session?.name || 'Qubiway Operations', author_type: 'staff',
         }, { auth: true });
       }
       setText('');

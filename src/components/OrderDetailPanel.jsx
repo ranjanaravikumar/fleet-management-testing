@@ -56,7 +56,7 @@ function DocHeader({ title, number, date }) {
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #1a1a1a', paddingBottom: '14px', marginBottom: '20px' }}>
       <div>
         <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '20px', letterSpacing: '-0.5px' }}>{title}</div>
-        <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>TruckerPath Logistics · Fleet Operations</div>
+        <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>Qubiway Logistics · Fleet Operations</div>
       </div>
       <div style={{ textAlign: 'right' }}>
         <div style={{ fontSize: '11px', color: '#666' }}>Document #</div>
@@ -99,7 +99,7 @@ function BOLPreview({ order, company }) {
         <Field label="Route" value={order.route} />
         <Field label="Commodity" value={order.commodity} />
         <Field label="Weight" value={order.weight} />
-        <Field label="Carrier" value="TruckerPath Logistics" />
+        <Field label="Carrier" value="Qubiway Logistics" />
       </div>
       <div style={{ borderTop: '1px dashed #bbb', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#666' }}>
         <span>Received in good order and condition, except as noted</span>

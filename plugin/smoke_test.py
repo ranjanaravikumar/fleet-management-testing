@@ -103,7 +103,7 @@ call("POST", f"/api/cases/{case['id']}/messages", {"author_type": "agent", "stat
 notes = call("GET", "/api/portal/shipments/SHP-2048", base=TMS)[1]["notes"]
 expect("Customer sees the answer in the shipment's Notes",
        (notes[0]["message"], notes[0]["author"]),
-       ("Your shipment is on TRUCK-015 with Marcus Johnson.", "TruckerPath Support"))
+       ("Your shipment is on TRUCK-015 with Marcus Johnson.", "Qubiway Support"))
 expect("Change is credited to the agent", call("GET", "/api/shipments/SHP-2048", base=TMS)[1]["notes"][1]["author"],
        "SMART API Agent")
 

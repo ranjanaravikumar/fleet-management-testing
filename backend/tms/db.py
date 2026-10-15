@@ -247,7 +247,7 @@ CREATE TABLE check_calls (
     miles_out       INTEGER,
     eta             TEXT,
     note            TEXT,
-    author          TEXT NOT NULL DEFAULT 'TruckerPath Operations',
+    author          TEXT NOT NULL DEFAULT 'Qubiway Operations',
     created_at      TEXT NOT NULL
 );
 

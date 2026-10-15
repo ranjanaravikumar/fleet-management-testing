@@ -36,7 +36,7 @@ function LoginForm({ onLogin, onBack, onShowView, onSwitchToSignup }) {
             <div style={{ width: 34, height: 34, borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <TpLogo size={34} />
             </div>
-            TruckerPath
+            Qubiway
           </div>
           <div className="login-role-badge" style={{ background: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.28)', color: '#60A5FA' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -144,7 +144,7 @@ function SignupForm({ onLogin, onBack }) {
             <div style={{ width: 34, height: 34, borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <TpLogo size={34} />
             </div>
-            TruckerPath
+            Qubiway
           </div>
           <div className="login-role-badge" style={{ background: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.28)', color: '#60A5FA' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
@@ -177,7 +177,7 @@ function SignupForm({ onLogin, onBack }) {
       <div className="login-right">
         <div className="login-form-box">
           <div className="login-form-title">Create Account</div>
-          <div className="login-form-sub">Start shipping with TruckerPath today.</div>
+          <div className="login-form-sub">Start shipping with Qubiway today.</div>
           <form onSubmit={submit} style={{ marginTop: 24 }}>
             <div className="lf-group">
               <label className="lf-label">Full Name</label>

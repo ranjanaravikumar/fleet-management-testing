@@ -110,5 +110,5 @@ TMS's notes unless the caller sends its own `author`.
 ```
 
 `event` is `case.created` or `case.customer_replied`. Detector cases have
-`"channel": "monitor"` and a first message from "TruckerPath monitoring"
+`"channel": "monitor"` and a first message from "Qubiway monitoring"
 describing the problem.

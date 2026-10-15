@@ -1,6 +1,6 @@
-# TruckerPath — Fleet Operations & Intelligence Platform
+# Qubiway — Fleet Operations & Intelligence Platform
 
-TruckerPath is a full-stack fleet management SaaS platform built for modern logistics teams. It combines a marketing landing page, role-based login flows, a fully featured admin operations dashboard, a backhaul load marketplace, and a customer shipment portal — all in a premium amber-accented dark UI.
+Qubiway is a full-stack fleet management SaaS platform built for modern logistics teams. It combines a marketing landing page, role-based login flows, a fully featured admin operations dashboard, a backhaul load marketplace, and a customer shipment portal — all in a premium amber-accented dark UI.
 
 ---
 

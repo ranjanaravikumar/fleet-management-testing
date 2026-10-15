@@ -1,4 +1,4 @@
-# TruckerPath TMS
+# Qubiway TMS
 
 A plain transportation management system: shipments, tracking, orders,
 quote requests, and a Notes tab on every record. It knows nothing about

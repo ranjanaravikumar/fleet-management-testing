@@ -49,7 +49,7 @@ function SignIn() {
       <TopBar area="portal" />
       <main className="tms-signin">
         <div className="tms-signin-box">
-          <h1>Sign in to TruckerPath</h1>
+          <h1>Sign in to Qubiway</h1>
           <p className="tms-sub">Choose how you're signing in.</p>
           <div className="tms-signin-grid">
             <section className="tms-panel">
