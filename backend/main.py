@@ -18,10 +18,14 @@ from backend.tms.seed import reset_demo
 
 
 def _schema_is_current() -> bool:
-    """False for a tms.db made by the older, agent-integrated version (no notes.visibility)."""
+    """False for a tms.db made by an older version, so the demo data is rebuilt on start."""
     conn = tms_db.get_db()
     try:
-        return "visibility" in {r["name"] for r in conn.execute("PRAGMA table_info(notes)")}
+        notes = {r["name"] for r in conn.execute("PRAGMA table_info(notes)")}
+        shipments = {r["name"] for r in conn.execute("PRAGMA table_info(shipments)")}
+        tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        return ("visibility" in notes and "invoice_status" in shipments
+                and {"carriers", "trucks", "documents", "charges"} <= tables)
     finally:
         conn.close()
 

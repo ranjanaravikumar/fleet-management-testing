@@ -83,6 +83,8 @@ export function PortalShipment() {
           {tab === 'details' && (
             <dl className="tms-kv">
               <div><dt>BOL</dt><dd>{s.bol}</dd></div>
+              <div><dt>Your PO number</dt><dd>{s.po_number || 'None'}</dd></div>
+              <div><dt>Your reference</dt><dd>{s.customer_ref || 'None'}</dd></div>
               <div><dt>Carrier</dt><dd>{s.carrier_name}</dd></div>
               <div><dt>Truck</dt><dd>{s.truck_id || 'Not assigned yet'}</dd></div>
               <div><dt>Driver</dt><dd>{s.driver_name || 'Not assigned yet'}</dd></div>

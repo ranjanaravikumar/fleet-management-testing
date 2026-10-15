@@ -39,7 +39,7 @@ export function TopBar({ area }) {
       </div>
       <form className="tms-search" onSubmit={search} role="search">
         <input value={q} onChange={e => setQ(e.target.value)} aria-label="Find a shipment or order"
-               placeholder="Find shipment, BOL or order number" />
+               placeholder="Find shipment, BOL, PO, PRO or order" />
         {error && <div className="tms-search-error" role="alert">{error}</div>}
       </form>
       <div className="tms-top-spacer" />
@@ -249,4 +249,49 @@ export function NotesPanel({ notes, entityType, entityId, customerCode, perspect
       {error && <div className="tms-error" style={{ marginTop: 10 }} role="alert">{error}</div>}
     </div>
   );
+}
+
+// ── Tables: sorting and searching ────────────────────────────────────
+
+export function SortTh({ id, sort, onSort, children, className }) {
+  const active = sort.key === id;
+  return (
+    <th className={className} aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" className={`tms-sort${active ? ' on' : ''}`} onClick={() => onSort(id)}>
+        {children}<span aria-hidden="true">{active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      </button>
+    </th>
+  );
+}
+
+export function SearchBox({ value, onChange, label, placeholder }) {
+  return (
+    <input className="tms-searchbox" type="search" value={value} onChange={e => onChange(e.target.value)}
+           aria-label={label} placeholder={placeholder} />
+  );
+}
+
+export function FilterChips({ items, value, onChange, label }) {
+  return (
+    <div className="tms-filters" role="group" aria-label={label}>
+      {items.map(f => (
+        <button key={f.id} type="button" className={value === f.id ? 'on' : ''} aria-pressed={value === f.id}
+                onClick={() => onChange(f.id)}>
+          {f.label}{f.count !== undefined && <span className="tms-chip-n">{f.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function KV({ items }) {
+  return (
+    <dl className="tms-kv">
+      {items.filter(Boolean).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v || v === 0 ? v : <span className="tms-sub">None</span>}</dd></div>)}
+    </dl>
+  );
+}
+
+export function ErrorNote({ error }) {
+  return error ? <div className="tms-error" style={{ marginTop: 10, marginBottom: 0 }} role="alert">{error}</div> : null;
 }

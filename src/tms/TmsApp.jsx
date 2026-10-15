@@ -6,7 +6,10 @@ import { useLiveData } from '../hooks/useLiveData';
 import { PORTAL_CUSTOMER, getSession, setSession } from './lib';
 import { SideNav, Tabs, TopBar } from './ui';
 import { PortalOrder, PortalOrders, PortalRequestQuote, PortalShipment, PortalShipments } from './portal/PortalPages';
-import { OpsOrder, OpsOrders, OpsShipment, OpsShipments } from './ops/OpsPages';
+import {
+  OpsCarrier, OpsCarriers, OpsCustomer, OpsCustomers, OpsDashboard, OpsDispatch, OpsFleet, OpsMap,
+  OpsOrder, OpsOrders, OpsShipment, OpsShipments,
+} from './ops/OpsPages';
 
 // ── Sign-in ──────────────────────────────────────────────────────────
 
@@ -64,7 +67,7 @@ function SignIn() {
             <section className="tms-panel">
               <div className="tms-panel-h"><h2>Operations console</h2></div>
               <form className="tms-panel-b" onSubmit={asOps}>
-                <p>Shipments, tracking, orders and notes.</p>
+                <p>Shipments, dispatch, orders, customers, carriers and billing.</p>
                 <div className="tms-field">
                   <label htmlFor="ops-key">Access key</label>
                   <input id="ops-key" type="password" autoComplete="current-password" value={key}
@@ -111,9 +114,17 @@ function OpsLayout() {
       <TopBar area="ops" />
       <div className="tms-body">
         <SideNav items={[
+          { to: '/tms/ops/home', label: 'Today' },
           { group: 'Operations' },
           { to: '/tms/ops/shipments', label: 'Shipments', count: exceptions },
+          { to: '/tms/ops/dispatch', label: 'Dispatch board' },
+          { to: '/tms/ops/map', label: 'Map' },
+          { group: 'Sales' },
           { to: '/tms/ops/orders', label: 'Orders' },
+          { to: '/tms/ops/customers', label: 'Customers' },
+          { group: 'Carriers and fleet' },
+          { to: '/tms/ops/carriers', label: 'Carriers' },
+          { to: '/tms/ops/fleet', label: 'Drivers and trucks' },
         ]} />
         <main className="tms-main"><Outlet /></main>
       </div>
@@ -136,11 +147,19 @@ export default function TmsApp() {
         <Route path="orders/new" element={<Navigate to="/tms/portal/quote" replace />} />
       </Route>
       <Route path="/tms/ops" element={<RequireRole role="ops"><OpsLayout /></RequireRole>}>
-        <Route index element={<Navigate to="shipments" replace />} />
+        <Route index element={<Navigate to="home" replace />} />
+        <Route path="home" element={<OpsDashboard />} />
         <Route path="shipments" element={<OpsShipments />} />
         <Route path="shipments/:id" element={<OpsShipment />} />
+        <Route path="dispatch" element={<OpsDispatch />} />
+        <Route path="map" element={<OpsMap />} />
         <Route path="orders" element={<OpsOrders />} />
         <Route path="orders/:id" element={<OpsOrder />} />
+        <Route path="customers" element={<OpsCustomers />} />
+        <Route path="customers/:code" element={<OpsCustomer />} />
+        <Route path="carriers" element={<OpsCarriers />} />
+        <Route path="carriers/:code" element={<OpsCarrier />} />
+        <Route path="fleet" element={<OpsFleet />} />
       </Route>
       <Route path="/tms/*" element={<Navigate to="/tms" replace />} />
     </Routes>

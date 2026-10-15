@@ -41,12 +41,16 @@ def get_db() -> sqlite3.Connection:
 SCHEMA = """
 DROP TABLE IF EXISTS case_messages;   -- left over from the agent-integrated version
 DROP TABLE IF EXISTS cases;
+DROP TABLE IF EXISTS documents;
+DROP TABLE IF EXISTS charges;
 DROP TABLE IF EXISTS notes;
 DROP TABLE IF EXISTS milestones;
 DROP TABLE IF EXISTS shipments;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS loads;
 DROP TABLE IF EXISTS drivers;
+DROP TABLE IF EXISTS trucks;
+DROP TABLE IF EXISTS carriers;
 DROP TABLE IF EXISTS customers;
 
 CREATE TABLE customers (
@@ -68,13 +72,45 @@ CREATE TABLE customers (
     terms           TEXT
 );
 
+CREATE TABLE carriers (
+    code                TEXT PRIMARY KEY,
+    name                TEXT NOT NULL,
+    mc_number           TEXT,
+    dot_number          TEXT,
+    contact             TEXT,
+    phone               TEXT,
+    email               TEXT,
+    home_base           TEXT,
+    equipment           TEXT,
+    insurance_expires   TEXT,           -- ISO date
+    status              TEXT NOT NULL DEFAULT 'Active',   -- Active | Do not use
+    on_time_pct         INTEGER,
+    own_fleet           INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE drivers (
     id              INTEGER PRIMARY KEY,
     name            TEXT NOT NULL,
     phone           TEXT,
     location        TEXT,
     status          TEXT,
-    truck_id        TEXT
+    truck_id        TEXT,
+    license         TEXT,
+    hos_remaining   REAL,           -- driving hours left today
+    home_terminal   TEXT
+);
+
+CREATE TABLE trucks (
+    id              TEXT PRIMARY KEY,   -- unit number, e.g. TRUCK-015
+    make            TEXT,
+    model           TEXT,
+    year            INTEGER,
+    plate           TEXT,
+    status          TEXT,               -- In service | In shop
+    location        TEXT,
+    odometer        INTEGER,
+    next_service    TEXT,               -- ISO date
+    issue           TEXT
 );
 
 CREATE TABLE loads (
@@ -108,7 +144,20 @@ CREATE TABLE shipments (
     pickup_appt_end         TEXT,
     delivery_appt_start     TEXT,
     delivery_appt_end       TEXT,
-    updated_at              TEXT
+    updated_at              TEXT,
+    carrier_code            TEXT REFERENCES carriers(code),
+    po_number               TEXT,
+    pro_number              TEXT,
+    customer_ref            TEXT,
+    shipper_name            TEXT,
+    shipper_address         TEXT,
+    consignee_name          TEXT,
+    consignee_address       TEXT,
+    miles                   INTEGER,
+    order_id                TEXT,
+    invoice_status          TEXT NOT NULL DEFAULT 'Not invoiced',   -- Not invoiced | Invoiced | Paid
+    invoice_number          TEXT,
+    invoiced_at             TEXT
 );
 
 CREATE TABLE milestones (
@@ -149,7 +198,8 @@ CREATE TABLE orders (
     dest_state              TEXT,
     pallet_count            TEXT,
     commodity               TEXT,
-    source                  TEXT NOT NULL DEFAULT 'csv'   -- csv (sample data) | portal (quote request from a customer)
+    source                  TEXT NOT NULL DEFAULT 'csv',  -- csv (sample data) | portal (quote request from a customer)
+    shipment_id             TEXT                          -- set when the order is booked as a shipment
 );
 
 CREATE TABLE notes (
@@ -165,7 +215,31 @@ CREATE TABLE notes (
     created_at      TEXT NOT NULL
 );
 
+CREATE TABLE documents (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    shipment_id     TEXT NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+    doc_type        TEXT NOT NULL,      -- BOL | POD | Rate confirmation | Invoice | Other
+    filename        TEXT NOT NULL,
+    content_type    TEXT NOT NULL,
+    size            INTEGER NOT NULL,
+    content         BLOB NOT NULL,
+    uploaded_by     TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE charges (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    shipment_id     TEXT NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+    side            TEXT NOT NULL,      -- customer (what we bill) | carrier (what we pay)
+    type            TEXT NOT NULL,      -- Linehaul | Fuel surcharge | Detention | Lumper | Accessorial | Carrier pay
+    description     TEXT,
+    amount          REAL NOT NULL,
+    created_at      TEXT NOT NULL
+);
+
 CREATE INDEX idx_milestones_shipment ON milestones(shipment_id);
+CREATE INDEX idx_documents_shipment ON documents(shipment_id);
+CREATE INDEX idx_charges_shipment ON charges(shipment_id);
 CREATE INDEX idx_notes_entity ON notes(entity_type, entity_id);
 """
 
