@@ -346,3 +346,69 @@ th.tms-num .tms-sort { justify-content: flex-end; width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .tms-msg.fresh, .tms-feed li.fresh { animation: none; background: var(--agent-bg); }
 }
+
+/* ── Dense data grid (Shipments, Orders) ──────────────────────────────
+   Desktop-TMS conventions on top of the existing tokens: filter tabs with
+   counts, a toolbar, a sticky header, a frozen first column, zebra rows,
+   selection and a status bar. Scoped to .tms-grid so the other tables
+   (dispatch, fleet, charges) keep the roomier look. */
+
+.tms-grid-panel { display: flex; flex-direction: column; min-height: 0; }
+
+/* Filter tabs across the top of the grid */
+.tms-gridtabs { display: flex; gap: 2px; align-items: flex-end; padding: 0 10px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tms-gridtabs button { height: 32px; padding: 0 12px; border: 1px solid transparent; border-bottom: none; border-radius: 5px 5px 0 0; background: none; color: var(--ink-2); font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
+.tms-gridtabs button:hover { color: var(--ink); background: #F7F9FC; }
+.tms-gridtabs button.on { background: var(--panel); border-color: var(--line); color: var(--brand-2); font-weight: 600; box-shadow: inset 0 2px 0 var(--brand); }
+.tms-gridtabs button.on .tms-chip-n { color: var(--brand-2); }
+
+/* Toolbar */
+.tms-gridbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }
+.tms-gridbar-sp { flex: 1 1 auto; }
+
+/* Dropdown menus (columns, views) */
+.tms-menu { position: relative; }
+.tms-menu > summary { list-style: none; display: inline-flex; }
+.tms-menu > summary::-webkit-details-marker { display: none; }
+.tms-menu > summary::after { content: '▾'; margin-left: 6px; font-size: 10px; }
+.tms-menu-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px rgba(16, 35, 58, .14); padding: 6px; }
+.tms-menu-h { padding: 6px 8px; font-size: 11.5px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+.tms-menu-empty { padding: 6px 8px; color: var(--ink-3); }
+.tms-menu-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+.tms-menu-row:hover { background: #F7F9FC; }
+.tms-menu-f { display: flex; gap: 6px; padding: 6px 8px 2px; border-top: 1px solid var(--line-2); margin-top: 4px; }
+.tms-linkish { all: unset; cursor: pointer; flex: 1; color: var(--brand); }
+.tms-linkish:hover { text-decoration: underline; }
+.tms-x { all: unset; cursor: pointer; color: var(--ink-3); padding: 0 4px; border-radius: 3px; }
+.tms-x:hover { color: var(--bad); }
+.tms-menu :focus-visible, .tms-gridtabs :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Scroll area: the header sticks, the first column freezes */
+.tms-grid-scroll { overflow: auto; max-height: calc(100vh - 390px); min-height: 200px; }
+.tms-table.tms-grid th { padding: 6px 10px; position: sticky; top: 0; z-index: 2; }
+.tms-table.tms-grid td { padding: 5px 10px; vertical-align: top; white-space: nowrap; }
+.tms-table.tms-grid td .tms-inline-note { white-space: nowrap; }
+.tms-table.tms-grid tbody tr:nth-child(even) td { background: #FAFBFD; }
+.tms-table.tms-grid tbody tr.click:hover td { background: #F1F6FD; }
+.tms-table.tms-grid tbody tr.picked td { background: #EDF3FD; }
+.tms-table.tms-grid tbody tr.cursor td { background: var(--brand-bg); }
+.tms-table.tms-grid tbody tr.cursor td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
+.tms-table.tms-grid .tms-sub { font-size: 11.5px; }
+
+.tms-table.tms-grid .tms-stick { position: sticky; background: var(--panel); }
+.tms-table.tms-grid td.tms-stick { z-index: 1; }
+.tms-table.tms-grid th.tms-stick { z-index: 3; background: #F8FAFB; }
+.tms-table.tms-grid .tms-stick-1 { left: 0; width: 30px; padding-right: 0; }
+.tms-table.tms-grid .tms-stick-2 { left: 30px; border-right: 1px solid var(--line); }
+.tms-table.tms-grid tbody tr:nth-child(even) .tms-stick { background: #FAFBFD; }
+.tms-table.tms-grid tbody tr.click:hover .tms-stick { background: #F1F6FD; }
+.tms-table.tms-grid tbody tr.picked .tms-stick { background: #EDF3FD; }
+.tms-table.tms-grid tbody tr.cursor .tms-stick { background: var(--brand-bg); }
+
+/* Status bar */
+.tms-gridstatus { display: flex; align-items: center; gap: 14px; padding: 7px 12px; border-top: 1px solid var(--line); background: #F8FAFB; border-radius: 0 0 6px 6px; font-size: 12px; color: var(--ink-2); }
+
+@media (max-width: 760px) {
+  .tms-grid-scroll { max-height: none; }
+  .tms-table.tms-grid .tms-stick { position: static; }
+}

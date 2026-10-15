@@ -10,6 +10,13 @@
   5 carriers, 7 trucks, 6 drivers, 6 customers, 17 shipments in the demo data
 - Checked in the build sandbox: smoke test 28/28, lint clean, build OK,
   detector still finds only SHP-1042 and SHP-2048
+- Favicon: flat truck mark in brand blue, `.ico` + apple-touch fallbacks
+- Part A, desktop-TMS grid conventions (`src/tms/grid.jsx`, one `DataGrid`
+  shared by Shipments and Orders): filter tabs with live counts, toolbar
+  (search, saved views, column chooser, refresh, export), dense rows with
+  sticky header and frozen first column, checkbox selection with a bulk
+  export, status bar, and keyboard (arrows move, Enter opens, `/` search,
+  Esc clears). Saved views live in sessionStorage; no backend change.
 
 ## Decisions
 - No triage agent (supervisor); AI only writes and reads carrier email
@@ -28,11 +35,9 @@
   `python -m plugin.smoke_test` with the TMS and plugin running
 
 ## Next
-1. Apply `tms-realistic.patch` locally on branch `tms-realistic`; run smoke test;
-   click through every screen; push the branch to `origin`
-2. Flow 1: map shipment_id from case.shipment_id; create Email Writer agent
-3. Test webhook with curl; set QUBI_WEBHOOK_URL on the plugin
-4. Gmail accounts + Flow 2 wiring fix
+1. Flow 1: map shipment_id from case.shipment_id; create Email Writer agent
+2. Test webhook with curl; set QUBI_WEBHOOK_URL on the plugin
+3. Gmail accounts + Flow 2 wiring fix
 
 ## Known gaps in the TMS
 - Map tiles need internet; cities come from a fixed list in `MapView.jsx`

@@ -1,32 +1,13 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveData } from '../../hooks/useLiveData';
 import { fmtDate } from '../../api/tms';
-import { ApiDown, ErrorNote, FilterChips, LiveNote, NotesPanel, PageHeader, RecordTabs, SearchBox, SortTh } from '../ui';
-import { matchesQuery, sortRows, useSort } from '../listing';
+import { ApiDown, ErrorNote, LiveNote, NotesPanel, PageHeader, RecordTabs } from '../ui';
+import { DataGrid } from '../grid';
 import { api, fromPhxInput, getSession, lane, toPhxInput, weight } from '../lib';
 import { OrderDetails, QuoteStatus } from '../portal/PortalPages';
 
-const PAGE = 50;
-
 const quoted = o => o.quote_status !== 'Quote pending';
-const TESTS = {
-  all: () => true,
-  portal: o => o.source === 'portal',
-  pending: o => !quoted(o) && !o.shipment_id,
-  ready: o => quoted(o) && !o.shipment_id,
-  booked: o => Boolean(o.shipment_id),
-};
-
-const ACCESSORS = {
-  id: o => o.id,
-  lane: o => lane(o),
-  weight: o => Number(String(o.weight_lbs).replace(/[^\d.]/g, '')) || null,
-  class: o => Number(o.freight_class) || null,
-  status: o => o.status,
-  quote: o => Number(String(o.quote).replace(/[^\d.]/g, '')) || null,
-  created: o => o.created_at,
-};
 
 function OrderState({ o }) {
   if (o.shipment_id) return <span className="tms-status tms-s-ok">Booked</span>;
@@ -35,25 +16,49 @@ function OrderState({ o }) {
 
 export function OpsOrders() {
   const live = useLiveData('/api/orders?limit=500', 5000);
-  const [filter, setFilter] = useState('all');
-  const [q, setQ] = useState('');
-  const [page, setPage] = useState(0);
-  const [sort, onSort] = useSort('created', 'desc');
   const navigate = useNavigate();
-  const all = live.data?.items || [];
+  const all = useMemo(() => live.data?.items || [], [live.data]);
 
-  const chips = [
-    { id: 'all', label: 'All' }, { id: 'portal', label: 'Quote requests' }, { id: 'pending', label: 'Needs a quote' },
-    { id: 'ready', label: 'Quoted, not booked' }, { id: 'booked', label: 'Booked' },
-  ].map(c => ({ ...c, count: live.data ? all.filter(TESTS[c.id]).length : undefined }));
+  const tabs = useMemo(() => [
+    { id: 'all', label: 'All', test: () => true },
+    { id: 'portal', label: 'Quote requests', test: o => o.source === 'portal' },
+    { id: 'pending', label: 'Needs a quote', test: o => !quoted(o) && !o.shipment_id },
+    { id: 'ready', label: 'Quoted, not booked', test: o => quoted(o) && !o.shipment_id },
+    { id: 'booked', label: 'Booked', test: o => Boolean(o.shipment_id) },
+  ], []);
 
-  const filtered = sortRows(all.filter(TESTS[filter]).filter(o => matchesQuery(q,
+  const columns = useMemo(() => [
+    {
+      id: 'id', label: 'Order', fixed: true, sortBy: o => o.id, csv: o => o.id,
+      render: o => (
+        <>
+          <Link className="tms-id" to={`/tms/ops/orders/${o.id}`} onClick={e => e.stopPropagation()}>{o.id}</Link>
+          {o.source === 'portal' && <div className="tms-sub">Quote request</div>}
+          {o.shipment_id && <div className="tms-sub">Shipment {o.shipment_id}</div>}
+        </>
+      ),
+    },
+    { id: 'lane', label: 'Lane', sortBy: o => lane(o) },
+    {
+      id: 'weight', label: 'Weight', num: true,
+      sortBy: o => Number(String(o.weight_lbs).replace(/[^\d.]/g, '')) || null,
+      csv: o => o.weight_lbs, render: o => weight(o),
+    },
+    { id: 'class', label: 'Class', sortBy: o => Number(o.freight_class) || null, csv: o => o.freight_class, render: o => o.freight_class },
+    { id: 'status', label: 'Order status', sortBy: o => o.status },
+    {
+      id: 'quote', label: 'Quote', sortBy: o => Number(String(o.quote).replace(/[^\d.]/g, '')) || null,
+      csv: o => o.quote_status, render: o => <OrderState o={o} />,
+    },
+    { id: 'created', label: 'Created', sortBy: o => o.created_at, csv: o => o.created_at, render: o => fmtDate(o.created_at) },
+    { id: 'commodity', label: 'Commodity', off: true, sortBy: o => o.commodity },
+    { id: 'pallets', label: 'Pallets', off: true, num: true, sortBy: o => Number(o.pallet_count) || null },
+  ], []);
+
+  const search = useCallback(o => [
     o.id, o.origin_zip, o.origin_state, o.origin_country, o.dest_zip, o.dest_state, o.dest_country,
-    o.commodity, o.status, o.freight_class, o.shipment_id)), sort, ACCESSORS);
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
-  const current = Math.min(page, pages - 1);
-  const rows = filtered.slice(current * PAGE, (current + 1) * PAGE);
-  const choose = setter => v => { setter(v); setPage(0); };
+    o.commodity, o.status, o.freight_class, o.shipment_id,
+  ], []);
 
   return (
     <>
@@ -61,50 +66,13 @@ export function OpsOrders() {
         <LiveNote live={live} />
       </PageHeader>
       <ApiDown live={live} />
-      <div className="tms-panel" style={{ overflowX: 'auto' }}>
-        <div className="tms-panel-h tms-toolbar">
-          <FilterChips items={chips} value={filter} onChange={choose(setFilter)} label="Show orders" />
-          <SearchBox value={q} onChange={choose(setQ)} label="Search orders" placeholder="Search order, ZIP, state, commodity" />
-        </div>
-        <table className="tms-table">
-          <thead>
-            <tr>
-              <SortTh id="id" sort={sort} onSort={onSort}>Order</SortTh>
-              <SortTh id="lane" sort={sort} onSort={onSort}>Lane</SortTh>
-              <SortTh id="weight" sort={sort} onSort={onSort} className="tms-num">Weight</SortTh>
-              <SortTh id="class" sort={sort} onSort={onSort}>Class</SortTh>
-              <SortTh id="status" sort={sort} onSort={onSort}>Order status</SortTh>
-              <SortTh id="quote" sort={sort} onSort={onSort}>Quote</SortTh>
-              <SortTh id="created" sort={sort} onSort={onSort}>Created</SortTh>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(o => (
-              <tr key={o.id} className="click" onClick={() => navigate(`/tms/ops/orders/${o.id}`)}>
-                <td><Link className="tms-id" to={`/tms/ops/orders/${o.id}`} onClick={e => e.stopPropagation()}>{o.id}</Link>
-                  {o.source === 'portal' && <div className="tms-sub">Quote request</div>}
-                  {o.shipment_id && <div className="tms-sub">Shipment {o.shipment_id}</div>}</td>
-                <td>{lane(o)}</td>
-                <td className="tms-num">{weight(o)}</td>
-                <td>{o.freight_class}</td>
-                <td>{o.status}</td>
-                <td><OrderState o={o} /></td>
-                <td>{fmtDate(o.created_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {live.data && rows.length === 0 && <p className="tms-empty">No orders match. Clear the search or pick another filter.</p>}
-        {filtered.length > PAGE && (
-          <div className="tms-panel-h" style={{ borderTop: '1px solid var(--line-2)', borderBottom: 'none' }}>
-            <span className="tms-sub">{current * PAGE + 1}–{Math.min(filtered.length, (current + 1) * PAGE)} of {filtered.length}</span>
-            <span className="tms-actions">
-              <button className="tms-btn small secondary" disabled={current === 0} onClick={() => setPage(current - 1)}>Previous</button>
-              <button className="tms-btn small secondary" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>Next</button>
-            </span>
-          </div>
-        )}
-      </div>
+      <DataGrid
+        name="orders" live={live} rows={all} tabs={tabs} columns={columns} search={search}
+        rowId={o => o.id} onOpen={o => navigate(`/tms/ops/orders/${o.id}`)}
+        initialSort={{ key: 'created', dir: 'desc' }}
+        csvName={tab => `orders-${tab}.csv`}
+        empty="No orders match. Clear the search or pick another tab."
+      />
     </>
   );
 }

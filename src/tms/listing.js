@@ -2,10 +2,14 @@ import { useState } from 'react';
 
 // Sorting and searching for the list screens.
 
-/** [sort, toggle]: click a column once for ascending, again for descending. */
+/**
+ * [sort, toggle]: click a column once for ascending, again for descending.
+ * Pass an explicit direction to set one outright, as restoring a saved view does.
+ */
 export function useSort(key, dir = 'asc') {
   const [sort, setSort] = useState({ key, dir });
-  const toggle = k => setSort(s => (s.key === k ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: 'asc' }));
+  const toggle = (k, forced) => setSort(s => (forced ? { key: k, dir: forced }
+    : s.key === k ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: 'asc' }));
   return [sort, toggle];
 }
 
