@@ -17,6 +17,9 @@
   sticky header and frozen first column, checkbox selection with a bulk
   export, status bar, and keyboard (arrows move, Enter opens, `/` search,
   Esc clears). Saved views live in sessionStorage; no backend change.
+- Plugin bug fixes: delivered shipments return `answer_from_tms` (not `needs_human`);
+  repeated customer questions reuse the last agent answer from any resolved case instead
+  of opening a new case. New `POST /api/detector/run-notes` endpoint. Smoke test 33/33.
 - Part B, four workflow features (one commit):
   1. Check calls — new `check_calls` table + GET/POST `/api/shipments/{id}/check-calls`;
      "Check calls" tab on the shipment page; latest call shown in Shipments grid.

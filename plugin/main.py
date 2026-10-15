@@ -104,6 +104,12 @@ def detector_run():
     return detector.run_detector()
 
 
+@app.post("/api/detector/run-notes", tags=["Detector"], dependencies=[Depends(require_api_key)],
+          summary="Run the notes watcher now instead of waiting for the next poll")
+def notes_watcher_run():
+    return {"handled": detector.run_notes_watcher()}
+
+
 @app.get("/api/detector/problems", tags=["Detector"],
          summary="Problems already reported, and the case each one opened")
 def detector_problems():

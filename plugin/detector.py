@@ -146,5 +146,6 @@ def status() -> dict:
         "detector": {"enabled": config.DETECTOR_ENABLED, "interval_seconds": config.DETECTOR_INTERVAL_SECONDS,
                      "last_run": _last["detector"]},
         "notes_watcher": {"enabled": config.WATCH_CUSTOMER_NOTES, "interval_seconds": config.NOTES_POLL_SECONDS,
-                          "cursor": store.kv_get("notes_cursor"), "last_run": _last["notes"]},
+                          "cursor": store.kv_get("notes_cursor"), "last_run": _last["notes"],
+                          "repeated_questions_reused": cases.repeated_answers_count()},
     }

@@ -155,5 +155,43 @@ hook = call("GET", "/api/cases/webhook-status")[1]
 if hook["configured"]:
     expect("Qubi webhook deliveries succeed", {a["result"] for a in hook["recent"]}, {"HTTP 200"})
 
+# ── Bug fixes: delivered shipments + repeated questions ───────────────
+# Reset so SHP-2045 has no open cases.
+call("POST", "/api/admin/reset", auth=True)
+
+# Step 1: customer asks about delivered shipment SHP-2045.
+call("POST", "/api/portal/notes", {"entity_type": "shipment", "entity_id": "SHP-2045",
+     "message": "Hi, can you confirm my delivery?"}, base=TMS)
+case_delv = wait_for(lambda: open_case(shipment_id="SHP-2045"))
+expect("Delivered shipment note opens a case", bool(case_delv), True)
+
+# Step 2: detector check recommends answer_from_tms for delivered SHP-2045.
+check_delv = call("GET", "/api/agent-tools/shipments/SHP-2045/check")[1]
+expect("Delivered shipment check recommends answer_from_tms",
+       check_delv.get("recommendation"), "answer_from_tms")
+expect("Delivered shipment check is not needs_human",
+       check_delv.get("recommendation") != "needs_human", True)
+
+# Step 3: resolve the case (simulating Flow 1 answering from TMS data).
+if case_delv:
+    call("POST", f"/api/cases/{case_delv['id']}/claim", auth=True)
+    call("POST", f"/api/cases/{case_delv['id']}/messages",
+         {"author_type": "agent", "status": "resolved",
+          "body": "Your shipment was delivered and signed by P. Morales."}, auth=True)
+
+# Step 4: customer asks again on the same delivered shipment.
+call("POST", "/api/portal/notes", {"entity_type": "shipment", "entity_id": "SHP-2045",
+     "message": "Hi, can you confirm my delivery?"}, base=TMS)
+# Trigger the notes watcher directly so we don't have to wait for its 5-second poll interval.
+call("POST", "/api/detector/run-notes", auth=True)
+# No new case should be created; the resolved case answer is reposted instead.
+open_after_repeat = open_case(shipment_id="SHP-2045")
+expect("Repeated question on delivered shipment does not open a new case",
+       open_after_repeat, None)
+# A note with the reused answer should appear on the shipment.
+notes_after = call("GET", "/api/portal/shipments/SHP-2045", base=TMS)[1]["notes"]
+reused = any("To follow up on your earlier question:" in (n.get("message") or "") for n in notes_after)
+expect("Repeated question reuses last agent answer as a new note", reused, True)
+
 call("POST", "/api/admin/reset", auth=True)   # leave the demo clean
 print(f"\n{sum(results)}/{len(results)} checks passed.")

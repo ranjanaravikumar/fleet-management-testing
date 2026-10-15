@@ -301,11 +301,22 @@ def _open_form(c: dict) -> dict | None:
     return msgs[idx]["form"]
 
 
+_repeated_answers = 0  # how many times we reused a resolved case answer this session
+
+
+def _last_agent_message(conn, case_id: str) -> str | None:
+    """The most recent agent/ops message body in a case, or None."""
+    m = row(conn, "SELECT body FROM case_messages WHERE case_id = ? AND author_type IN ('agent','ops') "
+                  "ORDER BY id DESC LIMIT 1", case_id)
+    return m["body"] if m else None
+
+
 def handle_customer_note(note: dict) -> tuple[str, str] | None:
     """A customer wrote a note in the TMS. Reply in an open case, or open a new one.
 
     Returns (event, case_id) for the Qubi webhook, or None if there's nothing to do.
     """
+    global _repeated_answers
     if note["author_type"] != "customer" or note["action"] != CUSTOMER_NOTE_ACTION \
             or note["entity_type"] not in ("shipment", "order"):
         return None
@@ -316,6 +327,9 @@ def handle_customer_note(note: dict) -> tuple[str, str] | None:
         field = "shipment_id" if note["entity_type"] == "shipment" else "order_id"
         open_cases = [load_case(conn, r["id"]) for r in rows(
             conn, f"SELECT id FROM cases WHERE {field} = ? AND status IN {OPEN} ORDER BY updated_at DESC",
+            note["entity_id"])]
+        resolved_cases = [load_case(conn, r["id"]) for r in rows(
+            conn, f"SELECT id FROM cases WHERE {field} = ? AND status = 'resolved' ORDER BY updated_at DESC",
             note["entity_id"])]
     finally:
         conn.close()
@@ -329,11 +343,44 @@ def handle_customer_note(note: dict) -> tuple[str, str] | None:
         c = customer_reply(target["id"], text, parse_form_response(_open_form(target), text), note["id"])
         return "case.customer_replied", c["id"]
 
+    # Check if the shipment can be answered from TMS data (e.g. it's delivered) and a
+    # resolved case already answered the same question. If so, repost the answer directly
+    # rather than opening a new case.
+    if resolved_cases and note["entity_type"] == "shipment":
+        from plugin.toolkit import shipment_check  # local import to avoid circular dep
+        try:
+            check = shipment_check(note["entity_id"])
+        except Exception:
+            check = None
+        if check and check.get("recommendation") == "answer_from_tms":
+            prior = resolved_cases[0]
+            conn = get_db()
+            try:
+                last_body = _last_agent_message(conn, prior["id"])
+            finally:
+                conn.close()
+            if last_body:
+                tms_client.add_note(
+                    note["entity_type"], note["entity_id"],
+                    f"To follow up on your earlier question: {last_body}",
+                    action="message", visibility="customer",
+                    author=config.SUPPORT_NAME, author_type="integration",
+                    source_ref=prior["id"],
+                )
+                _repeated_answers += 1
+                print(f"[notes] repeated question answered from resolved case {prior['id']} "
+                      f"(shipment {note['entity_id']}, total reused: {_repeated_answers})")
+                return None
+
     case_id, created = create_case(
         customer_code=None, shipment_id=note["entity_id"] if field == "shipment_id" else None,
         order_id=note["entity_id"] if field == "order_id" else None, channel="portal", category=category,
         message=text, author_name=note["author"], tms_note_id=note["id"])
     return ("case.created", case_id) if created else None
+
+
+def repeated_answers_count() -> int:
+    return _repeated_answers
 
 
 # ── Customer requests ────────────────────────────────────────────────

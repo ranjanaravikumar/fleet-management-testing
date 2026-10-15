@@ -51,6 +51,20 @@ def check_shipment(s: dict, milestones: list[dict], customer: dict | None,
         recorded.setdefault(m["code"], parse(m["event_time"]))
     furthest = max((step(c) for c in recorded), default=-1)
 
+    # 0. Delivered shipments: answer directly from the TMS data; nothing to chase.
+    if s.get("status") == "Delivered":
+        delv = next((m for m in milestones if m["code"] in ("POD", "DELV")), None)
+        if delv:
+            label = delv.get("label") or "Delivered"
+            at_str = f" at {delv['event_time']}" if delv.get("event_time") else ""
+            return {
+                "shipment_id": s["id"], "status": s["status"], "checked_at": iso(t),
+                "recommendation": "answer_from_tms",
+                "summary": f"{label}{at_str}.",
+                "overdue_milestones": [], "internal_fixes": [],
+                "unresolved_fields": [], "guardrails": [],
+            }
+
     # 1. Overdue milestones. A missing milestone only counts if nothing later was
     #    recorded (a recorded delivery implies the arrival happened).
     overdue = []
