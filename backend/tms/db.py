@@ -41,6 +41,7 @@ def get_db() -> sqlite3.Connection:
 SCHEMA = """
 DROP TABLE IF EXISTS case_messages;   -- left over from the agent-integrated version
 DROP TABLE IF EXISTS cases;
+DROP TABLE IF EXISTS check_calls;
 DROP TABLE IF EXISTS documents;
 DROP TABLE IF EXISTS charges;
 DROP TABLE IF EXISTS notes;
@@ -237,7 +238,21 @@ CREATE TABLE charges (
     created_at      TEXT NOT NULL
 );
 
+CREATE TABLE check_calls (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    shipment_id     TEXT NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+    called_at       TEXT NOT NULL,
+    spoke_to        TEXT,
+    location        TEXT,
+    miles_out       INTEGER,
+    eta             TEXT,
+    note            TEXT,
+    author          TEXT NOT NULL DEFAULT 'TruckerPath Operations',
+    created_at      TEXT NOT NULL
+);
+
 CREATE INDEX idx_milestones_shipment ON milestones(shipment_id);
+CREATE INDEX idx_check_calls_shipment ON check_calls(shipment_id);
 CREATE INDEX idx_documents_shipment ON documents(shipment_id);
 CREATE INDEX idx_charges_shipment ON charges(shipment_id);
 CREATE INDEX idx_notes_entity ON notes(entity_type, entity_id);

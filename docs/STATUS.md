@@ -17,6 +17,17 @@
   sticky header and frozen first column, checkbox selection with a bulk
   export, status bar, and keyboard (arrows move, Enter opens, `/` search,
   Esc clears). Saved views live in sessionStorage; no backend change.
+- Part B, four workflow features (one commit):
+  1. Check calls — new `check_calls` table + GET/POST `/api/shipments/{id}/check-calls`;
+     "Check calls" tab on the shipment page; latest call shown in Shipments grid.
+  2. Accessorial charge codes — CHARGE_CODES list (DET/LUM/TONU/REDEL/STOP/LAY/etc.)
+     with default rates that pre-fill the amount; GET `/api/meta/charge-codes`.
+     Existing charge data is unaffected (type column still stores label text).
+  3. Auto-rating — CWT rate table by lane + weight break; GET `/api/orders/{id}/rating`
+     returns breakdown; shown on order page when weight is set, accept-or-override
+     UI; override writes a note.
+  4. Staff order entry — POST `/api/orders`; `/tms/ops/orders/new` screen with
+     customer dropdown, lane, commodity, weight/class/pallets, PO reference.
 
 ## Decisions
 - No triage agent (supervisor); AI only writes and reads carrier email

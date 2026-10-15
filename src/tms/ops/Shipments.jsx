@@ -83,12 +83,26 @@ export function OpsShipments() {
       csv: s => s.delivery_appt_start, render: s => fmtWindow(s.delivery_appt_start, s.delivery_appt_end),
     },
     {
-      id: 'update', label: 'Last update', sortBy: s => s.last_milestone?.event_time,
-      csv: s => s.last_milestone?.label,
-      render: s => (
-        <>{s.last_milestone?.label}
-          <div className="tms-sub">{s.last_milestone ? fmtDateTime(s.last_milestone.event_time) : ''}</div></>
-      ),
+      id: 'update', label: 'Last update', sortBy: s => s.last_check_call?.called_at ?? s.last_milestone?.event_time,
+      csv: s => s.last_check_call
+        ? `Check call ${s.last_check_call.called_at}${s.last_check_call.location ? ` @ ${s.last_check_call.location}` : ''}`
+        : (s.last_milestone?.label ?? ''),
+      render: s => {
+        if (s.last_check_call) {
+          const cc = s.last_check_call;
+          return (
+            <>
+              Check call{cc.location ? ` — ${cc.location}` : ''}
+              {cc.miles_out != null && <span className="tms-sub"> {cc.miles_out.toLocaleString()} mi out</span>}
+              <div className="tms-sub">{fmtDateTime(cc.called_at)}</div>
+            </>
+          );
+        }
+        return (
+          <>{s.last_milestone?.label}
+            <div className="tms-sub">{s.last_milestone ? fmtDateTime(s.last_milestone.event_time) : ''}</div></>
+        );
+      },
     },
     { id: 'pro', label: 'PRO', off: true, sortBy: s => s.pro_number },
     { id: 'invoice', label: 'Invoice', off: true, sortBy: s => s.invoice_status },

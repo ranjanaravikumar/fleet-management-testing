@@ -4,7 +4,7 @@ import { useLiveData } from '../../hooks/useLiveData';
 import { fmtDate } from '../../api/tms';
 import { ApiDown, ErrorNote, LiveNote, NotesPanel, PageHeader, RecordTabs } from '../ui';
 import { DataGrid } from '../grid';
-import { api, fromPhxInput, getSession, lane, toPhxInput, weight } from '../lib';
+import { api, fromPhxInput, getSession, lane, money, toPhxInput, weight } from '../lib';
 import { OrderDetails, QuoteStatus } from '../portal/PortalPages';
 
 const quoted = o => o.quote_status !== 'Quote pending';
@@ -63,6 +63,7 @@ export function OpsOrders() {
   return (
     <>
       <PageHeader title="Orders" subtitle={live.data ? `${all.length} orders and quote requests` : ' '}>
+        <Link className="tms-btn secondary small" to="/tms/ops/orders/new">New order</Link>
         <LiveNote live={live} />
       </PageHeader>
       <ApiDown live={live} />
@@ -74,6 +75,62 @@ export function OpsOrders() {
         empty="No orders match. Clear the search or pick another tab."
       />
     </>
+  );
+}
+
+// ── Auto-rating ──────────────────────────────────────────────────────
+
+function AutoRating({ o, onAccept }) {
+  const live = useLiveData(`/api/orders/${encodeURIComponent(o.id)}/rating`, 0);
+  const [override, setOverride] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const r = live.data;
+
+  if (live.error) return null;
+  if (!r) return <p className="tms-sub">Calculating suggested rate…</p>;
+
+  async function accept(value) {
+    setSaving(true); setError('');
+    try {
+      await api.patch(`/api/orders/${o.id}`, {
+        quote: String(value),
+        reason: value === r.suggested_rate
+          ? `Auto-rate accepted: ${r.lane}, ${r.weight_lbs.toLocaleString()} lb.`
+          : `Auto-rate overridden from ${money(r.suggested_rate)} to ${money(value)}.`,
+        author: getSession()?.name,
+      }, { auth: true });
+      onAccept();
+    } catch (err) {
+      setError(err.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="tms-callout" style={{ marginBottom: 16 }}>
+      <strong>Suggested rate: {money(r.suggested_rate)}</strong>
+      <div className="tms-sub" style={{ marginTop: 4 }}>
+        {r.lane}{r.lane_specific ? '' : ' (default lane)'} · {r.weight_lbs.toLocaleString()} lb
+        ({r.weight_cwt} cwt) · ${r.rate_per_cwt}/cwt × {r.weight_multiplier} break
+        = {money(r.linehaul)} linehaul + {money(r.fuel_surcharge)} FSC ({r.fuel_pct}%)
+        {r.suggested_rate <= r.minimum_charge && ` · minimum charge applied`}
+      </div>
+      <div className="tms-actions" style={{ marginTop: 10 }}>
+        <button className="tms-btn small" disabled={saving} onClick={() => accept(r.suggested_rate)}>
+          Accept {money(r.suggested_rate)}
+        </button>
+        <input type="number" step="0.01" min="0" placeholder="Override amount"
+               className="tms-searchbox" style={{ width: 160 }}
+               value={override} onChange={e => setOverride(e.target.value)}
+               aria-label="Override quote amount" />
+        <button className="tms-btn secondary small" disabled={saving || !override || Number(override) <= 0}
+                onClick={() => accept(Number(override))}>
+          Set override
+        </button>
+      </div>
+      <ErrorNote error={error} />
+    </div>
   );
 }
 
@@ -194,7 +251,12 @@ export function OpsOrder() {
             {o.shipment_id
               ? <p>Booked as shipment <Link className="tms-id" to={`/tms/ops/shipments/${o.shipment_id}`}>{o.shipment_id}</Link>.</p>
               : o.quote_status === 'Quote pending'
-                ? <p className="tms-sub">This order needs a quote before it can be booked. Ask the customer for any missing details in Notes.</p>
+                ? (
+                  <>
+                    {o.weight_lbs && <AutoRating o={o} onAccept={live.reload} />}
+                    <p className="tms-sub">{o.weight_lbs ? 'Accept or override the suggested rate above, then book.' : 'This order needs a quote before it can be booked. Ask the customer for any missing details in Notes.'}</p>
+                  </>
+                )
                 : <BookShipment o={o} />}
           </div>
         </section>

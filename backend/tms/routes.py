@@ -210,6 +210,8 @@ def get_shipment(shipment_id: str):
         driver = (_row(conn, "SELECT * FROM drivers WHERE id = ?", load["driver_id"])
                   if load and load["driver_id"] else None)
         ms = _milestones(conn, shipment_id)
+        last_cc = _row(conn, "SELECT * FROM check_calls WHERE shipment_id = ? ORDER BY called_at DESC LIMIT 1",
+                       shipment_id)
         return {
             **s,
             "customer": _row(conn, "SELECT * FROM customers WHERE code = ?", s["customer_code"]),
@@ -217,6 +219,7 @@ def get_shipment(shipment_id: str):
             "load": load, "driver": driver,
             "milestones": ms, "tracking_alert": _tracking_alert(s, ms),
             "notes": _notes(conn, "shipment", shipment_id),
+            "last_check_call": last_cc,
         }
     finally:
         conn.close()
@@ -325,6 +328,72 @@ def add_milestone(shipment_id: str, body: MilestoneIn):
     finally:
         conn.close()
     return get_shipment(shipment_id)
+
+
+# ── check calls ──────────────────────────────────────────────────────
+
+class CheckCallIn(BaseModel):
+    called_at: str = Field(..., description="When the call happened, ISO datetime e.g. 2026-10-15T14:30:00-07:00")
+    spoke_to: Optional[str] = Field(None, max_length=100)
+    location: Optional[str] = Field(None, max_length=100, description="City, ST or highway marker")
+    miles_out: Optional[int] = Field(None, ge=0, description="Miles to destination at time of call")
+    eta: Optional[str] = Field(None, description="Estimated arrival ISO datetime")
+    note: Optional[str] = Field(None, max_length=1000)
+    author: Optional[str] = None
+
+
+@router.get("/shipments/{shipment_id}/check-calls", summary="Check calls for a shipment, newest first")
+def list_check_calls(shipment_id: str):
+    conn = get_db()
+    try:
+        _shipment_or_404(conn, shipment_id)
+        return _rows(conn, "SELECT * FROM check_calls WHERE shipment_id = ? ORDER BY called_at DESC", shipment_id)
+    finally:
+        conn.close()
+
+
+@router.post("/shipments/{shipment_id}/check-calls", status_code=201,
+             dependencies=[Depends(require_api_key)], summary="Record a check call")
+def add_check_call(shipment_id: str, body: CheckCallIn):
+    conn = get_db()
+    try:
+        _shipment_or_404(conn, shipment_id)
+        try:
+            when = parse(body.called_at)
+        except ValueError:
+            raise HTTPException(422, "called_at must be an ISO date-time.")
+        if when is None or when.tzinfo is None:
+            raise HTTPException(422, "called_at needs a time zone, e.g. -07:00.")
+        eta_iso = body.eta
+        if eta_iso:
+            try:
+                parse(eta_iso)
+            except ValueError:
+                raise HTTPException(422, "eta must be an ISO date-time.")
+        who = body.author or STAFF
+        conn.execute(
+            "INSERT INTO check_calls (shipment_id, called_at, spoke_to, location, miles_out, eta, note, author, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            (shipment_id, body.called_at, body.spoke_to, body.location, body.miles_out,
+             eta_iso, body.note, who, stamp()),
+        )
+        msg_parts = []
+        if body.location:
+            msg_parts.append(f"at {body.location}")
+        if body.miles_out is not None:
+            msg_parts.append(f"{body.miles_out} mi out")
+        if body.eta:
+            msg_parts.append(f"ETA {_friendly_time(body.eta)}")
+        if body.spoke_to:
+            msg_parts.append(f"spoke with {body.spoke_to}")
+        msg = "Check call — " + (", ".join(msg_parts) if msg_parts else "no details") + ("." if body.note else "")
+        if body.note:
+            msg += f" {body.note}"
+        _note(conn, "shipment", shipment_id, "note", msg, author=who)
+        conn.commit()
+    finally:
+        conn.close()
+    return list_check_calls(shipment_id)
 
 
 # ── customers, loads, drivers ────────────────────────────────────────
@@ -996,6 +1065,144 @@ def auth_check():
 @router.get("/meta/milestone-codes", summary="Milestone codes and labels")
 def milestone_codes():
     return [{"code": c, "label": v[1], "status_when_reached": v[2]} for c, v in MILESTONES.items()]
+
+
+# Accessorial charge codes with default rates and side (customer-billed / carrier-paid / both)
+_CHARGE_CODES = [
+    {"code": "LH",    "label": "Linehaul",               "default_rate": None,   "sides": ["customer", "carrier"]},
+    {"code": "FSC",   "label": "Fuel surcharge",          "default_rate": None,   "sides": ["customer", "carrier"]},
+    {"code": "DET",   "label": "Detention",               "default_rate": 75.00,  "sides": ["customer", "carrier"]},
+    {"code": "LUM",   "label": "Lumper",                  "default_rate": 150.00, "sides": ["customer", "carrier"]},
+    {"code": "TONU",  "label": "Truck ordered not used",  "default_rate": 250.00, "sides": ["customer", "carrier"]},
+    {"code": "REDEL", "label": "Redelivery",              "default_rate": 150.00, "sides": ["customer"]},
+    {"code": "STOP",  "label": "Extra stop",              "default_rate": 100.00, "sides": ["customer", "carrier"]},
+    {"code": "LAY",   "label": "Layover",                 "default_rate": 350.00, "sides": ["customer", "carrier"]},
+    {"code": "OTH",   "label": "Accessorial",             "default_rate": None,   "sides": ["customer", "carrier"]},
+    {"code": "CPY",   "label": "Carrier pay",             "default_rate": None,   "sides": ["carrier"]},
+    {"code": "FC",    "label": "Fleet cost",              "default_rate": None,   "sides": ["carrier"]},
+]
+
+
+@router.get("/meta/charge-codes", summary="Accessorial charge codes with default rates")
+def charge_codes():
+    return _CHARGE_CODES
+
+
+# ── auto-rating ──────────────────────────────────────────────────────
+
+_LANE_RATES: dict[tuple[str, str], float] = {
+    ("AZ", "TX"): 11.00, ("TX", "AZ"): 11.00,
+    ("AZ", "CA"): 9.50,  ("CA", "AZ"): 9.50,
+    ("AZ", "CO"): 10.50, ("CO", "AZ"): 10.50,
+    ("AZ", "NM"): 9.00,  ("NM", "AZ"): 9.00,
+    ("AZ", "UT"): 10.00, ("UT", "AZ"): 10.00,
+    ("TX", "FL"): 12.00, ("FL", "TX"): 12.00,
+    ("TX", "CA"): 13.00, ("CA", "TX"): 13.00,
+    ("TX", "CO"): 11.50, ("CO", "TX"): 11.50,
+    ("TX", "IL"): 11.00, ("IL", "TX"): 11.00,
+    ("CA", "WA"): 10.50, ("WA", "CA"): 10.50,
+    ("CA", "OR"): 10.00, ("OR", "CA"): 10.00,
+    ("FL", "GA"): 9.50,  ("GA", "FL"): 9.50,
+    ("IL", "OH"): 10.00, ("OH", "IL"): 10.00,
+    ("NY", "PA"): 9.00,  ("PA", "NY"): 9.00,
+}
+_DEFAULT_RATE_CWT = 12.00
+_FUEL_PCT = 18.0
+_MIN_CHARGE = 175.0
+_WEIGHT_BREAKS = [(10000, 0.70), (3000, 0.85), (1000, 1.00), (0, 1.50)]
+
+
+def _rate_order(o: dict) -> dict | None:
+    w = _num(o.get("weight_lbs"))
+    if not w or w <= 0:
+        return None
+    origin = (o.get("origin_state") or "").upper()
+    dest = (o.get("dest_state") or "").upper()
+    rate_cwt = _LANE_RATES.get((origin, dest), _DEFAULT_RATE_CWT)
+    weight_cwt = w / 100
+    multiplier = next((m for threshold, m in _WEIGHT_BREAKS if w >= threshold), 1.50)
+    linehaul = round(weight_cwt * rate_cwt * multiplier, 2)
+    fuel = round(linehaul * _FUEL_PCT / 100, 2)
+    total = max(_MIN_CHARGE, round(linehaul + fuel, 2))
+    return {
+        "suggested_rate": total,
+        "weight_lbs": w,
+        "weight_cwt": round(weight_cwt, 2),
+        "rate_per_cwt": rate_cwt,
+        "weight_multiplier": multiplier,
+        "linehaul": linehaul,
+        "fuel_surcharge": fuel,
+        "fuel_pct": _FUEL_PCT,
+        "minimum_charge": _MIN_CHARGE,
+        "lane": f"{origin or '?'} → {dest or '?'}",
+        "lane_specific": (origin, dest) in _LANE_RATES,
+    }
+
+
+@router.get("/orders/{order_id}/rating", summary="Auto-rating: suggested quote with breakdown")
+def get_order_rating(order_id: str):
+    conn = get_db()
+    try:
+        o = _order_or_404(conn, order_id)
+    finally:
+        conn.close()
+    rating = _rate_order(o)
+    if not rating:
+        raise HTTPException(422, "Can't rate this order: weight_lbs is missing or zero.")
+    return rating
+
+
+# ── create order (staff entry) ───────────────────────────────────────
+
+class OrderIn(BaseModel):
+    customer_code: str = Field(..., max_length=20)
+    origin_zip: Optional[str] = Field(None, max_length=20)
+    origin_state: Optional[str] = Field(None, max_length=50)
+    origin_country: Optional[str] = Field(None, max_length=50)
+    dest_zip: Optional[str] = Field(None, max_length=20)
+    dest_state: Optional[str] = Field(None, max_length=50)
+    dest_country: Optional[str] = Field(None, max_length=50)
+    weight_lbs: Optional[str] = None
+    freight_class: Optional[str] = None
+    pallet_count: Optional[str] = None
+    commodity: Optional[str] = Field(None, max_length=200)
+    skid_dims: Optional[str] = Field(None, max_length=100)
+    po_number: Optional[str] = Field(None, max_length=80)
+    author: Optional[str] = None
+
+
+@router.post("/orders", status_code=201, dependencies=[Depends(require_api_key)],
+             summary="Create a new order (staff entry)")
+def create_order(body: OrderIn):
+    conn = get_db()
+    try:
+        c = _row(conn, "SELECT * FROM customers WHERE code = ?", body.customer_code)
+        if not c:
+            raise HTTPException(422, f"Customer {body.customer_code!r} not found.")
+        last = conn.execute(
+            "SELECT MAX(CAST(SUBSTR(id, 5) AS INTEGER)) FROM orders WHERE id GLOB 'ORD-[0-9]*'"
+        ).fetchone()[0] or 1000
+        oid = f"ORD-{last + 1}"
+        t = stamp()
+        conn.execute(
+            "INSERT INTO orders (id, customer_code, origin_zip, origin_state, origin_country, "
+            "dest_zip, dest_state, dest_country, weight_lbs, freight_class, pallet_count, "
+            "commodity, skid_dims, status, source, created_at, last_updated_timestamp) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'Quote pending','staff',?,?)",
+            (oid, body.customer_code,
+             body.origin_zip, body.origin_state, body.origin_country,
+             body.dest_zip, body.dest_state, body.dest_country,
+             body.weight_lbs, body.freight_class, body.pallet_count,
+             body.commodity, body.skid_dims, t, t),
+        )
+        if body.po_number:
+            conn.execute("UPDATE orders SET status = ? WHERE id = ?", (f"PO {body.po_number}", oid))
+        who = body.author or STAFF
+        _note(conn, "order", oid, "note", f"Order entered by {who}.", author=who)
+        conn.commit()
+    finally:
+        conn.close()
+    return get_order(oid)
 
 
 @router.get("/events/status", summary="Outbound event subscription and recent deliveries")

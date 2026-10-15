@@ -200,11 +200,129 @@ function DocumentsTab({ s, onChange }) {
   );
 }
 
+// ── Check calls ──────────────────────────────────────────────────────
+
+function nowPhxInput() {
+  // current time expressed in Phoenix local (UTC-7) for a datetime-local field
+  const d = new Date(Date.now() - 7 * 3600 * 1000);
+  return d.toISOString().slice(0, 16);
+}
+
+function CheckCallsTab({ s }) {
+  const live = useLiveData(`/api/shipments/${encodeURIComponent(s.id)}/check-calls`, 10000);
+  const [calledAt, setCalledAt] = useState(() => nowPhxInput());
+  const [spokeTo, setSpokeTo] = useState('');
+  const [location, setLocation] = useState('');
+  const [milesOut, setMilesOut] = useState('');
+  const [eta, setEta] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const list = live.data || [];
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true); setError('');
+    try {
+      await api.post(`/api/shipments/${s.id}/check-calls`, {
+        called_at: `${calledAt}:00-07:00`,
+        spoke_to: spokeTo.trim() || undefined,
+        location: location.trim() || undefined,
+        miles_out: milesOut ? Number(milesOut) : undefined,
+        eta: eta ? `${eta}:00-07:00` : undefined,
+        note: note.trim() || undefined,
+        author: author(),
+      }, { auth: true });
+      setSpokeTo(''); setLocation(''); setMilesOut(''); setEta(''); setNote('');
+      setCalledAt(nowPhxInput());
+      live.reload();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <table className="tms-table">
+        <thead>
+          <tr><th>Time</th><th>Spoke with</th><th>Location</th><th>Miles out</th><th>ETA</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          {list.map(cc => (
+            <tr key={cc.id}>
+              <td className="tms-sub" style={{ whiteSpace: 'nowrap' }}>{fmtDateTime(cc.called_at)}</td>
+              <td>{cc.spoke_to || <span className="tms-sub">—</span>}</td>
+              <td>{cc.location || <span className="tms-sub">—</span>}</td>
+              <td className="tms-num">{cc.miles_out != null ? cc.miles_out.toLocaleString() : <span className="tms-sub">—</span>}</td>
+              <td style={{ whiteSpace: 'nowrap' }}>{cc.eta ? fmtDateTime(cc.eta) : <span className="tms-sub">—</span>}</td>
+              <td>{cc.note || ''}</td>
+            </tr>
+          ))}
+          {list.length === 0 && <tr><td colSpan={6} className="tms-sub">No check calls recorded yet.</td></tr>}
+        </tbody>
+      </table>
+      {s.status !== 'Delivered' && (
+        <form className="tms-reply" onSubmit={submit}>
+          <div className="tms-form-grid tms-form-grid-4">
+            <div className="tms-field">
+              <label htmlFor="cc-when">Time (Phoenix)</label>
+              <input id="cc-when" type="datetime-local" value={calledAt} onChange={e => setCalledAt(e.target.value)} required />
+            </div>
+            <div className="tms-field">
+              <label htmlFor="cc-who">Spoke with</label>
+              <input id="cc-who" value={spokeTo} onChange={e => setSpokeTo(e.target.value)} placeholder="Driver name" />
+            </div>
+            <div className="tms-field">
+              <label htmlFor="cc-loc">Location</label>
+              <input id="cc-loc" value={location} onChange={e => setLocation(e.target.value)} placeholder="City, ST or I-10 MM 120" />
+            </div>
+            <div className="tms-field">
+              <label htmlFor="cc-mi">Miles out</label>
+              <input id="cc-mi" type="number" min="0" value={milesOut} onChange={e => setMilesOut(e.target.value)} />
+            </div>
+            <div className="tms-field">
+              <label htmlFor="cc-eta">ETA (Phoenix)</label>
+              <input id="cc-eta" type="datetime-local" value={eta} onChange={e => setEta(e.target.value)} />
+            </div>
+            <div className="tms-field" style={{ gridColumn: 'span 3' }}>
+              <label htmlFor="cc-note">Note</label>
+              <input id="cc-note" value={note} onChange={e => setNote(e.target.value)} placeholder="Any issues or details" />
+            </div>
+          </div>
+          <button className="tms-btn secondary" disabled={busy}>{busy ? 'Saving' : 'Record check call'}</button>
+          <ErrorNote error={error} />
+        </form>
+      )}
+    </div>
+  );
+}
+
 // ── Charges and invoicing ────────────────────────────────────────────
 
-const CHARGE_TYPES = {
-  customer: ['Linehaul', 'Fuel surcharge', 'Detention', 'Lumper', 'Layover', 'Accessorial'],
-  carrier: ['Carrier pay', 'Fleet cost', 'Detention', 'Lumper', 'Layover', 'Accessorial'],
+const CHARGE_CODES = {
+  customer: [
+    { code: 'LH',    label: 'Linehaul',              default_rate: null },
+    { code: 'FSC',   label: 'Fuel surcharge',         default_rate: null },
+    { code: 'DET',   label: 'Detention',              default_rate: 75   },
+    { code: 'LUM',   label: 'Lumper',                 default_rate: 150  },
+    { code: 'TONU',  label: 'Truck ordered not used', default_rate: 250  },
+    { code: 'REDEL', label: 'Redelivery',             default_rate: 150  },
+    { code: 'STOP',  label: 'Extra stop',             default_rate: 100  },
+    { code: 'LAY',   label: 'Layover',                default_rate: 350  },
+    { code: 'OTH',   label: 'Accessorial',            default_rate: null },
+  ],
+  carrier: [
+    { code: 'CPY',   label: 'Carrier pay',            default_rate: null },
+    { code: 'FC',    label: 'Fleet cost',              default_rate: null },
+    { code: 'DET',   label: 'Detention',              default_rate: 75   },
+    { code: 'LUM',   label: 'Lumper',                 default_rate: 150  },
+    { code: 'TONU',  label: 'Truck ordered not used', default_rate: 250  },
+    { code: 'STOP',  label: 'Extra stop',             default_rate: 100  },
+    { code: 'LAY',   label: 'Layover',                default_rate: 350  },
+    { code: 'OTH',   label: 'Accessorial',            default_rate: null },
+  ],
 };
 
 function ChargeTable({ title, items, total, locked, onDelete }) {
@@ -231,7 +349,7 @@ function ChargeTable({ title, items, total, locked, onDelete }) {
 function ChargesTab({ s, onChange }) {
   const live = useLiveData(`/api/shipments/${encodeURIComponent(s.id)}/charges`, 10000);
   const [side, setSide] = useState('customer');
-  const [type, setType] = useState('Detention');
+  const [codeObj, setCodeObj] = useState(() => CHARGE_CODES.customer[2]);
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
@@ -240,6 +358,18 @@ function ChargesTab({ s, onChange }) {
   if (!c) return <p className="tms-sub">Loading charges</p>;
   const locked = c.invoice_status !== 'Not invoiced';
 
+  function switchCode(newCode) {
+    setCodeObj(newCode);
+    if (newCode.default_rate != null) setAmount(String(newCode.default_rate));
+  }
+
+  function switchSide(newSide) {
+    setSide(newSide);
+    const first = CHARGE_CODES[newSide][0];
+    setCodeObj(first);
+    if (first.default_rate != null) setAmount(String(first.default_rate)); else setAmount('');
+  }
+
   async function run(fn) {
     setBusy(true); setError('');
     try { await fn(); live.reload(); onChange(); } catch (err) { setError(err.message); } finally { setBusy(false); }
@@ -247,7 +377,9 @@ function ChargesTab({ s, onChange }) {
   const add = e => {
     e.preventDefault();
     run(async () => {
-      await api.post(`/api/shipments/${s.id}/charges`, { side, type, description: desc.trim() || undefined, amount: Number(amount), author: author() }, { auth: true });
+      await api.post(`/api/shipments/${s.id}/charges`,
+        { side, type: codeObj.label, description: desc.trim() || undefined, amount: Number(amount), author: author() },
+        { auth: true });
       setDesc(''); setAmount('');
     });
   };
@@ -281,15 +413,18 @@ function ChargesTab({ s, onChange }) {
         <div className="tms-form-grid tms-form-grid-4">
           <div className="tms-field">
             <label htmlFor="ch-side">Add to</label>
-            <select id="ch-side" value={side} onChange={e => { setSide(e.target.value); setType(CHARGE_TYPES[e.target.value][2]); }}>
+            <select id="ch-side" value={side} onChange={e => switchSide(e.target.value)}>
               <option value="customer" disabled={locked}>Customer charges</option>
               <option value="carrier">Carrier pay</option>
             </select>
           </div>
           <div className="tms-field">
-            <label htmlFor="ch-type">Charge</label>
-            <select id="ch-type" value={type} onChange={e => setType(e.target.value)}>
-              {CHARGE_TYPES[side].map(t => <option key={t}>{t}</option>)}
+            <label htmlFor="ch-type">Charge code</label>
+            <select id="ch-type" value={codeObj.code}
+                    onChange={e => switchCode(CHARGE_CODES[side].find(x => x.code === e.target.value))}>
+              {CHARGE_CODES[side].map(c => (
+                <option key={c.code} value={c.code}>{c.code} — {c.label}{c.default_rate ? ` ($${c.default_rate})` : ''}</option>
+              ))}
             </select>
           </div>
           <div className="tms-field">
@@ -459,6 +594,7 @@ export function OpsShipment() {
           <RecordTabs tab={tab} onChange={setTab} tabs={[
             { id: 'tracking', label: 'Tracking' },
             { id: 'stops', label: 'Stops' },
+            { id: 'check-calls', label: 'Check calls' },
             { id: 'documents', label: 'Documents' },
             { id: 'charges', label: 'Charges' },
             { id: 'notes', label: `Notes (${s.notes.length})` },
@@ -473,6 +609,7 @@ export function OpsShipment() {
               </>
             )}
             {tab === 'stops' && <StopsTab s={s} />}
+            {tab === 'check-calls' && <CheckCallsTab s={s} />}
             {tab === 'documents' && <DocumentsTab s={s} onChange={ship.reload} />}
             {tab === 'charges' && <ChargesTab s={s} onChange={ship.reload} />}
             {tab === 'notes' && (

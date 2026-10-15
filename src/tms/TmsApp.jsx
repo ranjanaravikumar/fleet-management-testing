@@ -8,7 +8,7 @@ import { SideNav, Tabs, TopBar } from './ui';
 import { PortalOrder, PortalOrders, PortalRequestQuote, PortalShipment, PortalShipments } from './portal/PortalPages';
 import {
   OpsCarrier, OpsCarriers, OpsCustomer, OpsCustomers, OpsDashboard, OpsDispatch, OpsFleet, OpsMap,
-  OpsOrder, OpsOrders, OpsShipment, OpsShipments,
+  OpsNewOrder, OpsOrder, OpsOrders, OpsShipment, OpsShipments,
 } from './ops/OpsPages';
 
 // ── Sign-in ──────────────────────────────────────────────────────────
@@ -154,6 +154,7 @@ export default function TmsApp() {
         <Route path="dispatch" element={<OpsDispatch />} />
         <Route path="map" element={<OpsMap />} />
         <Route path="orders" element={<OpsOrders />} />
+        <Route path="orders/new" element={<OpsNewOrder />} />
         <Route path="orders/:id" element={<OpsOrder />} />
         <Route path="customers" element={<OpsCustomers />} />
         <Route path="customers/:code" element={<OpsCustomer />} />

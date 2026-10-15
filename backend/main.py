@@ -25,7 +25,7 @@ def _schema_is_current() -> bool:
         shipments = {r["name"] for r in conn.execute("PRAGMA table_info(shipments)")}
         tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         return ("visibility" in notes and "invoice_status" in shipments
-                and {"carriers", "trucks", "documents", "charges"} <= tables)
+                and {"carriers", "trucks", "documents", "charges", "check_calls"} <= tables)
     finally:
         conn.close()
 
