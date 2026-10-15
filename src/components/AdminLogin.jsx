@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import TpLogo from './TpLogo';
 
-const DEMO = { email: 'admin@truckerpath.com', password: 'admin123' };
+const DEMO = { email: 'admin@qubiway.com', password: 'admin123' };
 
 export default function AdminLogin({ onLogin, onBack, onShowView }) {
   const [email, setEmail] = useState('');
@@ -78,7 +78,7 @@ export default function AdminLogin({ onLogin, onBack, onShowView }) {
           <form onSubmit={submit}>
             <div className="lf-group">
               <label className="lf-label">Email address</label>
-              <input className="lf-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@truckerpath.com" autoComplete="email" required />
+              <input className="lf-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@qubiway.com" autoComplete="email" required />
             </div>
             <div className="lf-group">
               <label className="lf-label">Password</label>

@@ -19,7 +19,7 @@ The SMART Agent demo shows a Qubi AI agent that finds shipment and order problem
 
 | Piece | State |
 | --- | --- |
-| Plain TMS + plugin | Built, on branch `claude/practical-lamport-kklv0e` |
+| Plain TMS + plugin | Built, on branch `tms-realistic` |
 | Qubi Flow 1 (resolve issue) | Drafted by Autopilot; needs an agent, Gmail and an input fix |
 | Qubi Flow 2 (carrier reply) | Drafted by Autopilot; needs an agent, Gmail trigger and a wiring fix |
 | Qubi webhook trigger | URL found; not yet tested |
@@ -28,14 +28,14 @@ The SMART Agent demo shows a Qubi AI agent that finds shipment and order problem
 
 ## Repos, branches and backups
 
-Work happens on your fork; the teammate's original repo is never pushed to. Use `claude/practical-lamport-kklv0e` as the working branch for the plain TMS ([README](https://github.com/ranjanaravikumar/fleet-management-testing/blob/claude/practical-lamport-kklv0e/README.md)).
+Work happens on your fork; the teammate's original repo is never pushed to. Use `tms-realistic` as the working branch for the plain TMS ([README](https://github.com/ranjanaravikumar/fleet-management-testing/blob/tms-realistic/README.md)).
 
 | Name | What it is | Use |
 | --- | --- | --- |
 | [Thayaa21/fleet-management-testing](https://github.com/Thayaa21/fleet-management-testing) | Teammate's original repo (React + Vite + FastAPI fleet app) | `upstream` remote, pull only; push is disabled |
 | [ranjanaravikumar/fleet-management-testing](https://github.com/ranjanaravikumar/fleet-management-testing) | Your fork | `origin` remote; all pushes go here |
 | Branch `smart-agent-demo` + tag `backup-custom-tabs` | TMS with Cases, Agent activity, Orders approvals, portal Get help | Backup; works with the old 18-node Qubi flow |
-| Branch `claude/practical-lamport-kklv0e` | Plain TMS + separate plugin service + updated Qubi guide | **Working branch** |
+| Branch `tms-realistic` | Plain TMS + separate plugin service + updated Qubi guide | **Working branch** |
 | Branch `plugin-architecture` | Started in chat for the same split | Superseded by the branch above; don't continue it |
 
 **What the working branch contains** (from its README and `plugin/README.md`):
@@ -269,7 +269,7 @@ The story is "the problem is fixed before anyone asks". Reset first (`POST /api/
 
 Work top to bottom; each step depends on the ones above it.
 
-- [ ] Check out `claude/practical-lamport-kklv0e` locally, run the TMS, the plugin and the screens, and pass `python -m plugin.smoke_test`.
+- [ ] Check out `tms-realistic` locally, run the TMS, the plugin and the screens, and pass `python -m plugin.smoke_test`.
 - [ ] Set your own `TMS_API_KEY` in both services and in Qubi's `TMS_API` credential.
 - [ ] Run `ngrok http 8100`; set every HTTP node's base URL to the plugin's address.
 - [ ] Test the webhook trigger with curl; then set `QUBI_WEBHOOK_URL` and `QUBI_TRIGGER_SECRET` on the plugin.

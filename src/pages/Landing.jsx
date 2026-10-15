@@ -279,7 +279,7 @@ export default function Landing({ onShowView }) {
           <div className="lp-mockup-shell">
             <div className="lp-mockup-bar">
               <div className="mc mc-r" /><div className="mc mc-y" /><div className="mc mc-g" />
-              <div className="lp-mockup-url">app.truckerpath.com — Fleet Command Center</div>
+              <div className="lp-mockup-url">app.qubiway.com — Fleet Command Center</div>
             </div>
             <div className="lp-mockup-body">
               <div className="lp-mock-sidebar">
@@ -641,7 +641,7 @@ export default function Landing({ onShowView }) {
           </div>
         </div>
         <div className="lp-footer-bottom">
-          <div className="lp-footer-copy">© 2024 Trucker Path, Inc.<span className="lp-footer-dot">·</span>All rights reserved<span className="lp-footer-dot">·</span><span style={{ color: 'var(--blue-brand)' }}>truckerpath.com</span></div>
+          <div className="lp-footer-copy">© 2024 Qubiway, Inc.<span className="lp-footer-dot">·</span>All rights reserved<span className="lp-footer-dot">·</span><span style={{ color: 'var(--blue-brand)' }}>qubiway.com</span></div>
           <div className="lp-footer-socials">
             <div className="lp-social-btn">𝕏</div>
             <div className="lp-social-btn">in</div>
