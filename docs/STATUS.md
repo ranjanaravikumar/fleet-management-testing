@@ -1,0 +1,44 @@
+# Status: 2026-10-15
+
+## Done
+- Plain TMS + plugin on branch `claude/practical-lamport-kklv0e`
+- Qubi Flow 1 and Flow 2 drafted by Autopilot
+- Fuller TMS built as `tms-realistic.patch` (one commit on top of the branch above):
+  Today dashboard, dispatch board, map, customers, carriers, drivers and trucks;
+  shipment search/sort/filters/CSV; Stops, Documents, Charges tabs; edit panel;
+  printable BOL and rate confirmation; invoicing; book a quoted order; PO/PRO refs;
+  5 carriers, 7 trucks, 6 drivers, 6 customers, 17 shipments in the demo data
+- Checked in the build sandbox: smoke test 28/28, lint clean, build OK,
+  detector still finds only SHP-1042 and SHP-2048
+
+## Decisions
+- No triage agent (supervisor); AI only writes and reads carrier email
+- Detector starts Flow 1 via webhook; Qubi's scheduler is not used
+- TMS stays plain: no agent tabs; the agent's work shows only as notes
+- Ops console opens on Today (`/tms/ops/home`)
+
+## Rules for any TMS change (for Claude Code)
+- Never rename or remove an existing API path or response field; the plugin
+  reads them (e.g. `carrier_email`, `truck_id`, `driver_name`, `tracking_alert`)
+- New active demo shipments need a truck, a driver and future appointments,
+  or the detector opens extra cases and the smoke test fails
+- Schema changes: update `_schema_is_current()` in `backend/main.py` so old
+  `tms.db` files are rebuilt
+- Before committing: `npx eslint src/tms`, `npx vite build`, and
+  `python -m plugin.smoke_test` with the TMS and plugin running
+
+## Next
+1. Apply `tms-realistic.patch` locally on branch `tms-realistic`; run smoke test;
+   click through every screen; push the branch to `origin`
+2. Flow 1: map shipment_id from case.shipment_id; create Email Writer agent
+3. Test webhook with curl; set QUBI_WEBHOOK_URL on the plugin
+4. Gmail accounts + Flow 2 wiring fix
+
+## Known gaps in the TMS
+- Map tiles need internet; cities come from a fixed list in `MapView.jsx`
+- SHP-2049 becomes overdue about 2.5 h after a reset (existing behavior);
+  reset right before a demo
+- Not yet visually checked: Map, Orders, Customers, Carriers, Fleet screens
+
+## Blocked / waiting
+- Qubi team: schedule/queue triggers don't fire; ActionHub not set up
