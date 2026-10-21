@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
+import { Building2, ClipboardList, LayoutDashboard, Map as MapIcon, Package, SquareKanban, Truck, Users, Warehouse } from 'lucide-react';
 import './tms.css';
 import { TMS_API_URL } from '../api/tms';
 import { useLiveData } from '../hooks/useLiveData';
@@ -106,25 +107,40 @@ function PortalLayout() {
   );
 }
 
+const NAV_KEY = 'tms-nav-collapsed';
+
+function readCollapsed() {
+  try { return localStorage.getItem(NAV_KEY) === '1'; } catch { return false; }
+}
+
 function OpsLayout() {
   const ships = useLiveData('/api/shipments?status=active', 10000);
   const exceptions = (ships.data || []).filter(s => s.tracking_alert).length;
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  function toggle() {
+    setCollapsed(c => {
+      try { localStorage.setItem(NAV_KEY, c ? '0' : '1'); } catch { /* remembering the choice is optional */ }
+      return !c;
+    });
+  }
+
   return (
     <div className="tms">
       <TopBar area="ops" />
       <div className="tms-body">
-        <SideNav items={[
-          { to: '/tms/ops/home', label: 'Today' },
+        <SideNav collapsed={collapsed} onToggle={toggle} items={[
+          { to: '/tms/ops/home', label: 'Today', icon: LayoutDashboard },
           { group: 'Operations' },
-          { to: '/tms/ops/shipments', label: 'Shipments', count: exceptions },
-          { to: '/tms/ops/dispatch', label: 'Dispatch board' },
-          { to: '/tms/ops/map', label: 'Map' },
+          { to: '/tms/ops/shipments', label: 'Shipments', icon: Package, count: exceptions },
+          { to: '/tms/ops/dispatch', label: 'Dispatch board', icon: SquareKanban },
+          { to: '/tms/ops/map', label: 'Map', icon: MapIcon },
           { group: 'Sales' },
-          { to: '/tms/ops/orders', label: 'Orders' },
-          { to: '/tms/ops/customers', label: 'Customers' },
+          { to: '/tms/ops/orders', label: 'Orders', icon: ClipboardList },
+          { to: '/tms/ops/customers', label: 'Customers', icon: Users },
           { group: 'Carriers and fleet' },
-          { to: '/tms/ops/carriers', label: 'Carriers' },
-          { to: '/tms/ops/fleet', label: 'Drivers and trucks' },
+          { to: '/tms/ops/carriers', label: 'Carriers', icon: Building2 },
+          { to: '/tms/ops/fleet', label: 'Drivers and trucks', icon: Truck },
         ]} />
         <main className="tms-main"><Outlet /></main>
       </div>

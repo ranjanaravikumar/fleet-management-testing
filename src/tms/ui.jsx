@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { fmtDate, fmtDateTime, fmtTime, fmtWindow, timeAgo } from '../api/tms';
 import { useFreshIds, useNow } from '../hooks/useLiveData';
@@ -54,14 +55,30 @@ export function TopBar({ area }) {
   );
 }
 
-export function SideNav({ items }) {
+/**
+ * The operations menu. `collapsed` shrinks it to icons (a label shows as a tooltip); `onToggle` flips it.
+ * Items: { to, label, icon?, count? } or { group }.
+ */
+export function SideNav({ items, collapsed = false, onToggle }) {
+  const Toggle = collapsed ? PanelLeftOpen : PanelLeftClose;
+  const label = collapsed ? 'Expand menu' : 'Collapse menu';
   return (
-    <nav className="tms-side" aria-label="Main">
+    <nav id="tms-side" className={`tms-side${collapsed ? ' collapsed' : ''}`} aria-label="Main">
+      {onToggle && (
+        <button type="button" className="tms-side-toggle" onClick={onToggle} aria-expanded={!collapsed}
+                aria-controls="tms-side" title={label} aria-label={label}>
+          <Toggle size={18} aria-hidden="true" />
+        </button>
+      )}
       {items.map(item => item.group
-        ? <div key={item.group} className="tms-side-group">{item.group}</div>
+        ? <div key={item.group} className="tms-side-group"><span>{item.group}</span></div>
         : (
-          <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}>
-            {item.label}
+          <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}
+                   title={collapsed ? item.label : undefined} aria-label={collapsed ? item.label : undefined}>
+            <span className="tms-side-item">
+              {item.icon && <item.icon size={18} aria-hidden="true" />}
+              <span className="tms-side-label">{item.label}</span>
+            </span>
             {item.count > 0 && <span className="tms-count">{item.count}</span>}
           </NavLink>
         ))}

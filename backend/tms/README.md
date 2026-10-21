@@ -105,7 +105,7 @@ Open http://localhost:5173/Load-Lorry/tms and choose:
   exceptions, record a tracking update, Orders, and the Notes tab on each
   record (internal or customer-visible).
 
-Screens refresh themselves every few seconds. To point them at another
+The menu on the left collapses to icons with the button at its top (the choice is remembered). Screens refresh themselves every few seconds. To point them at another
 backend, create `.env.local` in the project root and restart `npm run dev`:
 
 ```

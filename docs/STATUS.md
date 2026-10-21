@@ -5,7 +5,8 @@
 - Fuller TMS: Today dashboard, dispatch board, map, customers, carriers, fleet; shipment grid
   (filters, saved views, export, keyboard); Stops/Documents/Charges/Check calls tabs; edit panel;
   printable BOL and rate confirmation; invoicing; book a quoted order; PO/PRO refs; staff order
-  entry; accessorial charge codes; auto-rating; demo data of 17 shipments, 5 carriers, 6 customers
+  entry; accessorial charge codes; auto-rating; demo data of 17 shipments, 5 carriers, 6 customers;
+  ops menu collapses to icons (button at its top, remembered in localStorage)
 - Plugin: detector (every 60 s, once per problem), notes watcher (5 s), customer requests, order
   events, toolkit, repeated questions reuse the last answer, delivered shipments answer from the TMS
 - Qubi Flow 1 live and tested end to end through the webhook (credential `TMS_API`, ngrok to :8100):
@@ -27,7 +28,7 @@
   - `python -m plugin.classifier_check`: 28 sample requests run through the real flow to check what the
     classifier reads (`docs/classifier-test-set.md`); not yet run against the real agent
   - Smoke test 66/66 with a Qubi webhook, 63/63 without
-- Docs: `docs/qubi-flows.md` (final Flow 1 and Flow 2), `plugin/README.md`
+- Docs: `docs/qubi-flows.md`, `plugin/README.md`
 
 ## Decisions
 - AI understands, code decides: a classifier at the entry of Flow 1 picks a topic only; the plugin's
@@ -54,6 +55,5 @@
 ## Known gaps
 - Map tiles need internet; cities come from a fixed list in `MapView.jsx`
 - SHP-2049 turns overdue about 2.5 h after a reset: reset right before a demo
-- Classifier-to-guardrail path is covered by the smoke test with a fake classifier; the real
-  Qubi agent hasn't been run against it yet
+- The real Qubi classifier hasn't been run against the guardrails yet (smoke test uses a fake)
 - Qubi: schedule/queue triggers don't fire; ActionHub not set up

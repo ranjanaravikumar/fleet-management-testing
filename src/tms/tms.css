@@ -69,11 +69,23 @@
 
 /* Body: side nav + main */
 .tms-body { flex: 1; display: flex; min-height: 0; }
-.tms-side { width: 200px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--line); padding: 12px 8px; overflow-y: auto; }
+.tms-side { width: 200px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--line); padding: 12px 8px; overflow-y: auto; overflow-x: hidden; transition: width .15s ease; }
 .tms-side-group { font-size: 11.5px; color: var(--ink-3); padding: 12px 10px 4px; }
 .tms-side a { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border-radius: 5px; color: var(--ink-2); font-weight: 500; }
 .tms-side a:hover { background: var(--canvas); text-decoration: none; color: var(--ink); }
 .tms-side a.active { background: var(--brand-bg); color: var(--brand-2); }
+.tms-side-item { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tms-side-item svg { flex-shrink: 0; }
+.tms-side-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tms-side-toggle { display: flex; align-items: center; justify-content: flex-end; width: 100%; padding: 6px 10px; margin-bottom: 4px;
+  background: none; border: 0; border-radius: 5px; color: var(--ink-3); cursor: pointer; font: inherit; }
+.tms-side-toggle:hover { background: var(--canvas); color: var(--ink); }
+.tms-side.collapsed { width: 56px; padding: 12px 6px; }
+.tms-side.collapsed .tms-side-toggle { justify-content: center; padding: 6px 0; }
+.tms-side.collapsed .tms-side-group { padding: 0; margin: 8px 10px; border-top: 1px solid var(--line); }
+.tms-side.collapsed .tms-side-group span, .tms-side.collapsed .tms-side-label { display: none; }
+.tms-side.collapsed a { position: relative; justify-content: center; padding: 9px 0; }
+.tms-side.collapsed .tms-count { position: absolute; top: 1px; right: 3px; min-width: 16px; padding: 0 4px; font-size: 10.5px; line-height: 16px; }
 .tms-count { font-size: 11.5px; font-weight: 600; min-width: 20px; text-align: center; padding: 1px 6px; border-radius: 10px; background: var(--bad-bg); color: var(--bad); }
 .tms-main { flex: 1; overflow-y: auto; padding: 20px 24px 40px; min-width: 0; }
 .tms-main-narrow { max-width: 1180px; margin: 0 auto; }
@@ -344,6 +356,7 @@ th.tms-num .tms-sort { justify-content: flex-end; width: 100%; }
   .tms-feed li { grid-template-columns: 1fr; gap: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .tms-side { transition: none; }
   .tms-msg.fresh, .tms-feed li.fresh { animation: none; background: var(--agent-bg); }
 }
 
