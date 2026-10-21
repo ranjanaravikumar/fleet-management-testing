@@ -5,8 +5,8 @@
 - Fuller TMS: Today dashboard, dispatch board, map, customers, carriers, fleet; shipment grid
   (filters, saved views, export, keyboard); Stops/Documents/Charges/Check calls tabs; edit panel;
   printable BOL and rate confirmation; invoicing; book a quoted order; PO/PRO refs; staff order
-  entry; accessorial charge codes; auto-rating; demo data of 17 shipments, 5 carriers, 6 customers;
-  ops menu collapses to icons (button at its top, remembered in localStorage)
+  entry; charge codes; auto-rating; demo data (17 shipments, 5 carriers, 6 customers); ops menu
+  collapses to icons (remembered)
 - Plugin: detector (every 60 s, once per problem), notes watcher (5 s), customer requests, order
   events, toolkit, a repeated status/truck question reuses the last answer (never a change or price
   question), delivered shipments answer from the TMS
