@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from plugin import cases, config, detector, qubi, store, tms_client, toolkit
+from plugin import cases, config, detector, dispatch, store, tms_client, toolkit
 from plugin.auth import require_api_key
 
 
@@ -61,22 +61,12 @@ class TmsEvent(BaseModel):
     data: dict
 
 
-def _review_in_plugin() -> bool:
-    mode = config.ORDER_REVIEW_MODE
-    return mode == "plugin" or (mode == "auto" and not config.QUBI_WEBHOOK_URL)
-
-
 def _on_order_submitted(order_id: str):
     case_id, created = cases.create_case(
         customer_code=None, shipment_id=None, order_id=order_id, channel="portal", category="new_order",
         message="New order submitted through the portal.")
-    if not created:
-        return
-    if _review_in_plugin():
-        cases_claim = cases.claim_case(case_id)
-        toolkit.review_order(order_id, cases_claim["id"])
-    else:
-        qubi.notify("case.created", cases.get_case(case_id))
+    if created:
+        dispatch.route("case.created", cases.get_case(case_id))
 
 
 @app.post("/events/tms", status_code=202, tags=["Order events"],
@@ -130,7 +120,7 @@ def health():
     except HTTPException as e:
         tms = e.detail
     return {"status": "ok", "service": "smart-api-agent-plugin", "tms_url": config.TMS_URL, "tms": tms,
-            "qubi_webhook": bool(config.QUBI_WEBHOOK_URL), "order_review": "plugin" if _review_in_plugin() else "qubi"}
+            "qubi_webhook": bool(config.QUBI_WEBHOOK_URL), "order_review": "plugin" if dispatch.orders_handled_by_plugin() else "qubi"}
 
 
 @app.post("/api/admin/reset", tags=["Plugin"], dependencies=[Depends(require_api_key)],

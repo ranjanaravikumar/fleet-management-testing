@@ -32,10 +32,14 @@ DETECTOR_INTERVAL_SECONDS = int(os.environ.get("DETECTOR_INTERVAL_SECONDS", "60"
 WATCH_CUSTOMER_NOTES = _flag("WATCH_CUSTOMER_NOTES", True)
 NOTES_POLL_SECONDS = int(os.environ.get("NOTES_POLL_SECONDS", "5"))
 
-# Who reviews a new order: "qubi" (Flow 1 calls /api/agent-tools/orders/{id}/review),
-# "plugin" (the plugin reviews it straight away), or "auto" (plugin only when no
-# Qubi webhook is set).
-ORDER_REVIEW_MODE = os.environ.get("ORDER_REVIEW_MODE", "auto").strip().lower()
+# Who works order cases (a new quote request, a question or answer on an order): the plugin
+# (any value but "qubi", the default) or Qubi's Flow 1 ("qubi"). Flow 1 works on shipments,
+# so leave this alone unless you've built an order path in the flow.
+ORDER_REVIEW_MODE = os.environ.get("ORDER_REVIEW_MODE", "plugin").strip().lower()
+
+# The request classifier (an AI step in Flow 1) reports how sure it is, 0 to 1.
+# Below this, the request goes to a person instead of being answered.
+CLASSIFIER_MIN_CONFIDENCE = float(os.environ.get("CLASSIFIER_MIN_CONFIDENCE", "0.6"))
 
 PLUGIN_DB_PATH = os.environ.get("PLUGIN_DB_PATH", os.path.join(os.path.dirname(__file__), "plugin.db"))
 

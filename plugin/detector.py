@@ -16,7 +16,7 @@ Notes watcher (every NOTES_POLL_SECONDS, 5 by default):
 import threading
 import traceback
 
-from plugin import cases, config, qubi, store, tms_client
+from plugin import cases, config, dispatch, store, tms_client
 from plugin.clock import stamp
 from plugin.toolkit import shipment_check
 
@@ -74,7 +74,7 @@ def run_detector() -> dict:
             if created:
                 tms_client.add_note("shipment", s["id"], f"{found_text} Opened {case_id} for the agent.",
                                     action="problem_detected", source_ref=case_id)
-                qubi.notify("case.created", cases.get_case(case_id))
+                dispatch.route("case.created", cases.get_case(case_id))
                 opened.append(case_id)
     _last["detector"] = {"at": stamp(), "problems": len(found), "opened": opened}
     return {"checked_at": stamp(), "problems": found, "opened_cases": opened}
@@ -103,7 +103,7 @@ def run_notes_watcher() -> list[dict]:
             result = cases.handle_customer_note(note)
             if result:
                 event, case_id = result
-                qubi.notify(event, cases.get_case(case_id))
+                dispatch.route(event, cases.get_case(case_id))
                 handled.append({"note_id": note["id"], "event": event, "case_id": case_id})
         except Exception:  # noqa: BLE001 — one bad note must not stop the others
             traceback.print_exc()

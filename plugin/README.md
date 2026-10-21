@@ -68,9 +68,24 @@ Open http://localhost:8100/docs to see every endpoint.
 | `DETECTOR_INTERVAL_SECONDS` | `60` | How often the detector checks |
 | `WATCH_CUSTOMER_NOTES` | `true` | Treat customer notes in the TMS as requests and replies |
 | `NOTES_POLL_SECONDS` | `5` | How often the notes watcher checks |
-| `ORDER_REVIEW_MODE` | `auto` | `qubi`: Flow 1 reviews new orders. `plugin`: the plugin does. `auto`: the plugin only when no Qubi webhook is set |
+| `ORDER_REVIEW_MODE` | `plugin` | Who works order cases (a quote request, a question on an order, an answer to the agent). Anything but `qubi`: the plugin does, and they never reach Flow 1, which works on shipments. `qubi`: send them to Flow 1 |
+| `CLASSIFIER_MIN_CONFIDENCE` | `0.6` | The request classifier in Flow 1 reports how sure it is. Below this, the request goes to a person |
 | `PLUGIN_DB_PATH` | `plugin/plugin.db` | The plugin's own database (cases, detected problems) |
 | `CORS_ORIGINS` | `http://localhost:5173` | Web pages allowed to call the plugin |
+
+## How a request is decided
+
+An AI step reads what the customer wrote; code decides what happens. The classifier can only choose a topic. It can't choose an action, so a customer's wording can't talk the agent into changing a delivery.
+
+```
+customer note / email ──► Qubi classifier (AI): topic + confidence
+                                  │
+                         POST /cases/{id}/decide  (code: guardrails)
+                                  │
+        answer_from_tms · fix_internally · ask_carrier · needs_human
+```
+
+Order cases skip this: the plugin works them itself (`dispatch.py`), including re-reviewing an order when the customer answers its question.
 
 ## Endpoints
 
@@ -86,8 +101,10 @@ Writing needs `X-API-Key` (🔑).
 | `POST /api/cases/{id}/messages` 🔑 | Write to the customer (becomes a customer-visible note in the TMS); can set `status` and send a `form` |
 | `PATCH /api/cases/{id}` 🔑 | Change a case's status. `needs_human` also leaves an internal "Needs a person" note for staff |
 | `GET /api/cases/webhook-status` | Whether the Qubi webhook is set up, and recent attempts |
-| `GET /api/agent-tools/shipments/{id}/check?sender=` | What should the agent do about this shipment |
-| `POST /api/agent-tools/shipments/{id}/apply-fixes` 🔑 | Fill in what other TMS records already know |
+| `POST /api/agent-tools/cases/{id}/decide` 🔑 | **Flow 1's one decision call.** Takes the classifier's `category` and `confidence`, runs the shipment check, and applies the guardrails: change requests and quote questions always go to a person, an unsure classifier goes to a person, a detector case keeps its own topic. Returns the same fields as the shipment check, plus `category` and `category_source` (`ai`, `rules` or `detector`) |
+| `GET /api/agent-tools/shipments/{id}/check?sender=` | What should the agent do about this shipment (no case, no classifier) |
+| `POST /api/agent-tools/shipments/{id}/apply-fixes` 🔑 | Fill in what other TMS records already know. Send the case ID as `source_ref`: if a customer asked (not a detector case), they are told what was filled in |
+| `POST /api/agent-tools/shipments/{id}/carrier-reply` 🔑 | **Flow 2's one call.** Records the carrier's arrival and delivery, adds a note, tells the customer, and resolves the case. A time that doesn't fit (in the future, out of order) is not recorded and the case goes to a person. Safe to repeat |
 | `GET /api/agent-tools/orders/{id}/check` | Data problems in one order |
 | `GET /api/agent-tools/orders/data-quality` | Sweep every order |
 | `POST /api/agent-tools/orders/apply-safe-fixes?dry_run=true` 🔑 | Apply every safe fix (`dry_run=false` to really apply) |

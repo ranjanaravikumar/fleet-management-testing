@@ -63,6 +63,12 @@ CUSTOMER_NOTE_ACTION = "note"
 _customer_cache: dict[str, dict | None] = {}
 
 
+def _notify(event: str, case: dict) -> None:
+    """Hand a case event to whoever works it (Flow 1, or the plugin for order cases)."""
+    from plugin import dispatch   # late import: dispatch imports this module
+    dispatch.route(event, case)
+
+
 # ── helpers ──────────────────────────────────────────────────────────
 
 def _customer(code: str | None) -> dict | None:
@@ -146,6 +152,11 @@ def post_to_customer(conn, c: dict, author_type: str, body: str, form=None, auth
                                author=name, author_type="integration" if author_type == "agent" else "staff",
                                source_ref=c["id"])
     _insert_message(conn, c["id"], author_type, name, body, form=form, tms_note_id=note["id"])
+
+
+def add_system_message(conn, case_id: str, body: str, author_name: str = "Qubiway") -> None:
+    """A line in the case's own history (not shown to the customer)."""
+    _insert_message(conn, case_id, "system", author_name, body)
 
 
 def set_status(conn, c: dict, status: str, reason: str | None):
@@ -415,7 +426,7 @@ def customer_request(body: CustomerRequestIn, background: BackgroundTasks, respo
         external_ref=body.external_ref, author_name=body.author_name, record_note=True)
     c = get_case(case_id)
     if created:
-        background.add_task(qubi.notify, "case.created", c)
+        background.add_task(_notify, "case.created", c)
     else:
         response.status_code = 200   # an open case on this topic already exists
     return {**c, "existing": not created}
@@ -439,7 +450,7 @@ def portal_open_case(body: PortalCaseIn, background: BackgroundTasks, response: 
         channel="portal", category=body.category, message=message, record_note=True)
     c = get_case(case_id)
     if created:
-        background.add_task(qubi.notify, "case.created", c)
+        background.add_task(_notify, "case.created", c)
     else:
         response.status_code = 200
     return {**c, "existing": not created}
@@ -456,7 +467,7 @@ def portal_reply(case_id: str, body: PortalReplyIn, background: BackgroundTasks)
         raise HTTPException(422, "Write a message or fill in the form.")
     text = body.body.strip() or "\n".join(f"{k}: {v}" for k, v in body.form_response.items())
     c = customer_reply(case_id, text, body.form_response)
-    background.add_task(qubi.notify, "case.customer_replied", c)
+    background.add_task(_notify, "case.customer_replied", c)
     return c
 
 
@@ -521,7 +532,7 @@ def open_case(body: CaseIn, background: BackgroundTasks, response: Response):
         record_note=body.channel != "monitor")
     c = get_case(case_id)
     if created:
-        background.add_task(qubi.notify, "case.created", c)
+        background.add_task(_notify, "case.created", c)
     else:
         response.status_code = 200
     return {**c, "existing": not created}

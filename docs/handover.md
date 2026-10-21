@@ -113,7 +113,7 @@ What the customer should see becomes a **customer-visible note** in the TMS; int
 | `PLUGIN_API_KEY` | same as `TMS_API_KEY` | The key Qubi sends in `X-API-Key` |
 | `QUBI_WEBHOOK_URL`, `QUBI_TRIGGER_SECRET` | empty | Flow 1's trigger; the secret goes in `X-Trigger-Secret` |
 | `DETECTOR_ENABLED`, `DETECTOR_INTERVAL_SECONDS` | `true`, `60` | Detector on or off, and how often |
-| `ORDER_REVIEW_MODE` | `auto` | Who reviews new orders: `qubi`, `plugin`, or `auto` |
+| `ORDER_REVIEW_MODE` | `plugin` | Who works order cases: the plugin (default) or `qubi` |
 
 **What it sends to Qubi:** `{"event": "case.created", "case_id": "CASE-1002", "case": {...}}`, or `case.customer_replied`. Detector cases have `"channel": "monitor"`. The shipment ID is at `case.shipment_id`, **not** at the top level; see the Qubi workflows section.
 
