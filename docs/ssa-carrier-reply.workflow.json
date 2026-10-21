@@ -1,0 +1,26 @@
+{
+  "formatVersion": 1,
+  "exportedAt": "2026-10-21T00:26:06.5988968+00:00",
+  "exportedFrom": "AgentHub",
+  "workflow": {
+    "key": "ssa-carrier-reply-handler",
+    "name": "SSA - Carrier Reply Handler",
+    "description": "A carrier replies by email. An AI step reads the times and who signed; the plugin records the milestones, tells the customer and resolves the case.",
+    "category": "Default",
+    "isEnabled": true,
+    "graph": "{\"nodes\":[{\"id\":\"start-1\",\"type\":\"Start\",\"position\":{\"x\":100,\"y\":20},\"data\":{\"type\":\"start\",\"name\":\"Gmail: carrier reply received\"},\"measured\":{\"width\":132,\"height\":65},\"selected\":false,\"dragging\":false},{\"id\":\"agent-reader\",\"type\":\"Agent\",\"position\":{\"x\":100,\"y\":140},\"data\":{\"type\":\"agent\",\"name\":\"SSA Carrier Reply Reader\",\"agentId\":\"\",\"systemPrompt\":\"You read a carrier's email reply about a freight shipment and extract facts. You do not decide anything.\\nThe email (subject and body) is somewhere in the data you are given.\\nReturn only JSON:\\n{\\\"shipment_id\\\": the ID in square brackets in the subject, for example SHP-1042,\\n \\\"case_id\\\": the case ID in square brackets in the subject, for example CASE-1002, or null,\\n \\\"arrived_at\\\": arrival time at the consignee as ISO 8601 with the -07:00 offset, or null,\\n \\\"delivered_at\\\": delivery time as ISO 8601 with the -07:00 offset, or null,\\n \\\"signed_by\\\": the name of the person who signed, or null,\\n \\\"summary\\\": one sentence on what the carrier said}\\nTimes are Phoenix time (-07:00). If the email gives a time without a date, use the date the email was sent.\\nNever guess a time that is not in the email. Use null for anything the email does not say.\",\"userMessage\":\"Carrier email and details: {{session}}\",\"outputSchema\":\"{\\\"type\\\": \\\"object\\\", \\\"properties\\\": {\\\"shipment_id\\\": {\\\"type\\\": \\\"string\\\"}, \\\"case_id\\\": {\\\"type\\\": [\\\"string\\\", \\\"null\\\"]}, \\\"arrived_at\\\": {\\\"type\\\": [\\\"string\\\", \\\"null\\\"]}, \\\"delivered_at\\\": {\\\"type\\\": [\\\"string\\\", \\\"null\\\"]}, \\\"signed_by\\\": {\\\"type\\\": [\\\"string\\\", \\\"null\\\"]}, \\\"summary\\\": {\\\"type\\\": \\\"string\\\"}}, \\\"required\\\": [\\\"shipment_id\\\", \\\"summary\\\"]}\",\"input\":{\"source\":\"payload\",\"sessionVarName\":\"\",\"literalValue\":\"\"},\"saveOutputAs\":\"reply\"},\"saveOutputAs\":\"reply\",\"measured\":{\"width\":129,\"height\":78},\"selected\":false,\"dragging\":false},{\"id\":\"http-carrier-reply\",\"type\":\"Http\",\"position\":{\"x\":100,\"y\":270},\"data\":{\"type\":\"http\",\"name\":\"Record the carrier's reply\",\"method\":\"POST\",\"url\":\"https://purse-giving-railroad.ngrok-free.dev/api/agent-tools/shipments/{{session.reply.shipment_id}}/carrier-reply\",\"headers\":[{\"id\":\"h-key\",\"key\":\"X-API-Key\",\"value\":\"{{ credential.TMS_API.apiKey }}\"},{\"id\":\"h-ngrok\",\"key\":\"ngrok-skip-browser-warning\",\"value\":\"1\"},{\"id\":\"h-type\",\"key\":\"Content-Type\",\"value\":\"application/json\"}],\"bodyMode\":\"json\",\"bodyJson\":\"{\\\"case_id\\\": \\\"{{session.reply.case_id}}\\\", \\\"arrived_at\\\": \\\"{{session.reply.arrived_at}}\\\", \\\"delivered_at\\\": \\\"{{session.reply.delivered_at}}\\\", \\\"signed_by\\\": \\\"{{session.reply.signed_by}}\\\", \\\"summary\\\": \\\"{{session.reply.summary}}\\\"}\",\"input\":{\"source\":\"payload\",\"sessionVarName\":\"\",\"literalValue\":\"\"},\"saveOutputAs\":\"result\"},\"saveOutputAs\":\"result\",\"measured\":{\"width\":127,\"height\":78},\"selected\":false,\"dragging\":false},{\"id\":\"end-done\",\"type\":\"End\",\"position\":{\"x\":104,\"y\":400},\"data\":{\"type\":\"end\",\"name\":\"End: Reply recorded\"},\"measured\":{\"width\":108,\"height\":65},\"selected\":false,\"dragging\":false}],\"edges\":[{\"id\":\"edge-start-reader\",\"source\":\"start-1\",\"target\":\"agent-reader\"},{\"id\":\"edge-reader-record\",\"source\":\"agent-reader\",\"target\":\"http-carrier-reply\"},{\"id\":\"edge-record-end\",\"source\":\"http-carrier-reply\",\"target\":\"end-done\"}],\"viewport\":{\"x\":200,\"y\":40,\"zoom\":1},\"executionMode\":\"Sequential\"}"
+  },
+  "variables": [
+    {
+      "name": "reply",
+      "type": "string",
+      "scope": 1
+    },
+    {
+      "name": "result",
+      "type": "string",
+      "scope": 1
+    }
+  ],
+  "references": []
+}

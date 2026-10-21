@@ -59,26 +59,41 @@ confirmation are visible. When a case a customer started moves to `needs_human` 
 adds a notice by itself ("Our operations team is looking at this…" / "We're checking with the carrier…"), once. Flow 1
 doesn't need a node for it. Notes the flow writes (resolved, drafted email, no automatic action) are internal.
 
-## Flow 2: SSA - Carrier reply
+## Flow 2: SSA - Carrier Reply Handler
 
-Trigger: Gmail (IntegrationHub), a new email whose subject contains `[SHP-`.
+Import `docs/ssa-carrier-reply.workflow.json` (a separate flow named "SSA - Carrier Reply Handler"), select the
+**SSA Carrier Reply Reader** agent in its node, then attach the trigger: Integration Hub, a Gmail trigger on the
+inbox the carrier replies to, a new email whose subject contains `[SHP-`.
 
 ```
 Gmail trigger
-  → SSA Carrier Reply Reader (agent, saves `reply`)
+  → SSA Carrier Reply Reader (agent, saves `reply`; it is given the whole email as `{{session}}`)
   → POST /api/agent-tools/shipments/{{session.reply.shipment_id}}/carrier-reply
-      {"case_id": "{{session.reply.case_id}}", "arrived_at": "{{session.reply.arrived_at}}",
-       "delivered_at": "{{session.reply.delivered_at}}", "signed_by": "{{session.reply.signed_by}}",
-       "summary": "{{session.reply.summary}}", "source_ref": "<the email subject>"}
+      {"case_id", "arrived_at", "delivered_at", "signed_by", "summary"}   saves `result`
   → End
 ```
 
-**SSA Carrier Reply Reader** output: `shipment_id`, `case_id` (from the subject, e.g. CASE-1002, or null), `arrived_at`,
-`delivered_at` (ISO 8601 with -07:00, or null), `signed_by`, `summary`. Never guess a time that isn't in the email.
-Empty or `null` values are fine; the plugin treats them as "not given". The call records the milestones, tells the
-customer, resolves the case, and is safe to repeat.
+**SSA Carrier Reply Reader** output: `shipment_id`, `case_id` (from the subject, e.g. CASE-1002, or null),
+`arrived_at`, `delivered_at` (ISO 8601 with -07:00, or null), `signed_by`, `summary`. The instructions are in the
+export's agent node. It never guesses a time that isn't in the email. A time with no date takes the date the email
+was sent. Empty or `null` values are fine; the plugin treats them as "not given". The call records the milestones,
+tells the customer, resolves the case, and is safe to repeat.
 
-The send node in Flow 1 puts the case ID in the subject: `{{session.email.subject}} [{{session.case_id}}]`.
+### Sending the carrier email from Flow 1
+1. IntegrationHub → connect the Gmail account that will send (the demo "operations" mailbox).
+2. In Flow 1, on the `ask_carrier` path, after **SSA Carrier Email Writer** and before **Post carrier inquiry note**,
+   add the Gmail send-email action:
+   - **To:** `{{session.shipment.carrier_email}}`
+   - **Subject:** `{{session.email.subject}} [{{session.case_id}}]`  (the Reader takes the case ID from the brackets)
+   - **Body:** `{{session.email.body}}`
+3. Change the note to "Emailed {{session.shipment.carrier_name}}: {{session.email.subject}}. Waiting on the carrier."
+4. Run the TMS with `DEMO_CARRIER_EMAIL` set to an inbox you own (it is every demo carrier's address), then reset.
+
+### Testing the loop
+Reset, run the detector. SHP-1042's flow emails the carrier inbox. Reply from that inbox, keeping the subject:
+"Arrived 2:05 PM, delivered 3:30 PM today, signed by J. Ortiz" (times in the past, today, Phoenix time).
+Flow 2 should record both milestones, SHP-1042 becomes Delivered, the customer sees the confirmation, and the case
+is resolved. A time in the future, or out of order, is not recorded and the case goes to a person.
 
 ## Not built yet
 - ActionHub task for `needs_human` (tenant not set up). Today a person sees the note on the shipment.
