@@ -24,6 +24,8 @@
   - A note on a case the carrier or a person already has no longer restarts Flow 1 (`not_sent`
     in `/api/cases/webhook-status`); a case stuck as `new` is re-sent up to 3 times, then handed to a person
   - An agent reply or classifier answer that arrives as JSON text is unwrapped by the plugin
+  - `python -m plugin.classifier_check`: 28 sample requests run through the real flow to check what the
+    classifier reads (`docs/classifier-test-set.md`); not yet run against the real agent
   - Smoke test 66/66 with a Qubi webhook, 63/63 without
 - Docs: `docs/qubi-flows.md` (final Flow 1 and Flow 2), `plugin/README.md`
 
