@@ -366,6 +366,7 @@ def _open_form(c: dict) -> dict | None:
 
 
 _repeated_answers = 0  # how many times we reused a resolved case answer this session
+REUSABLE_TOPICS = ("status_update", "truck_number")   # questions the TMS answers; a repeat gets the same answer
 
 
 def _last_agent_message(conn, case_id: str) -> str | None:
@@ -407,17 +408,19 @@ def handle_customer_note(note: dict) -> tuple[str, str] | None:
         c = customer_reply(target["id"], text, parse_form_response(_open_form(target), text), note["id"])
         return "case.customer_replied", c["id"]
 
-    # Check if the shipment can be answered from TMS data (e.g. it's delivered) and a
-    # resolved case already answered the same question. If so, repost the answer directly
-    # rather than opening a new case.
-    if resolved_cases and note["entity_type"] == "shipment":
+    # Check if the shipment can be answered from TMS data (e.g. it's delivered) and a resolved case already
+    # answered the SAME question. If so, repost the answer directly rather than opening a new case. Only for a
+    # topic the TMS answers (a change or a price question must always reach a person, and so reach the
+    # classifier and the guardrails), and only from a case on that same topic.
+    reusable = [c for c in resolved_cases if c["category"] == category and category in REUSABLE_TOPICS]
+    if reusable and note["entity_type"] == "shipment":
         from plugin.toolkit import shipment_check  # local import to avoid circular dep
         try:
             check = shipment_check(note["entity_id"])
         except Exception:
             check = None
         if check and check.get("recommendation") == "answer_from_tms":
-            prior = resolved_cases[0]
+            prior = reusable[0]
             conn = get_db()
             try:
                 last_body = _last_agent_message(conn, prior["id"])

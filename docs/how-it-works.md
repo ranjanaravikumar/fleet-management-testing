@@ -68,8 +68,10 @@ TMS for newer notes written by a customer, and for each one:
 1. Ignore it unless a person wrote it (`action = note`) on a shipment or order, and it isn't already part of a case.
 2. Find the open cases on that record. If one is **waiting for the customer**, or has the **same topic**, the note is a
    **reply** to it.
-3. Otherwise, if the shipment can be answered from TMS data and an earlier resolved case already answered the same
-   question, repeat that answer without opening anything. This is why asking twice doesn't spend a second run.
+3. Otherwise, if the shipment can be answered from TMS data and an earlier resolved case already answered the **same
+   kind of question** (a status or truck/driver question), repeat that answer without opening anything. This is why
+   asking twice doesn't spend a second run. A change request or a price question never takes this shortcut: it
+   always gets its own case, so it reaches the classifier and the guardrails.
 4. Otherwise open a new case (channel `portal`) and hand it to dispatch.
 
 A provisional topic comes from simple **keyword matching** (change, truck/driver, price, where/status, else other).

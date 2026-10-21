@@ -8,7 +8,8 @@
   entry; accessorial charge codes; auto-rating; demo data of 17 shipments, 5 carriers, 6 customers;
   ops menu collapses to icons (button at its top, remembered in localStorage)
 - Plugin: detector (every 60 s, once per problem), notes watcher (5 s), customer requests, order
-  events, toolkit, repeated questions reuse the last answer, delivered shipments answer from the TMS
+  events, toolkit, a repeated status/truck question reuses the last answer (never a change or price
+  question), delivered shipments answer from the TMS
 - Qubi Flow 1 live and tested end to end through the webhook (credential `TMS_API`, ngrok to :8100):
   SHP-2048 fixes itself, SHP-1042 goes to the carrier path, on-hold SHP-2051 goes to a person
 - Gap work (this session), all in the plugin so the Qubi flows stay small:
@@ -27,7 +28,7 @@
   - An agent reply or classifier answer that arrives as JSON text is unwrapped by the plugin
   - `python -m plugin.classifier_check`: 28 sample requests run through the real flow to check what the
     classifier reads (`docs/classifier-test-set.md`); not yet run against the real agent
-  - Smoke test 66/66 with a Qubi webhook, 63/63 without
+  - Smoke test 67/67 with a Qubi webhook, 64/64 without
 - Docs: `docs/how-it-works.md`, `docs/qubi-flows.md`, `docs/demo-runbook.md`, `plugin/README.md`
 
 ## Decisions

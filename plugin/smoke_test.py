@@ -316,5 +316,15 @@ notes_after = call("GET", "/api/portal/shipments/SHP-2045", base=TMS)[1]["notes"
 reused = any("To follow up on your earlier question:" in (n.get("message") or "") for n in notes_after)
 expect("Repeated question reuses last agent answer as a new note", reused, True)
 
+# A different kind of request must not get that old answer: it goes through the classifier and the guardrails.
+call("POST", "/api/portal/notes", {"entity_type": "shipment", "entity_id": "SHP-2045",
+     "message": "Please deliver to our Mesa warehouse instead"}, base=TMS)
+call("POST", "/api/detector/run-notes", auth=True)
+changed = open_case(shipment_id="SHP-2045")
+expect("A change request after an answered question opens its own case, with no stale answer",
+       (changed and changed["category"],
+        sum("To follow up on your earlier question:" in (n.get("message") or "") for n in
+            call("GET", "/api/portal/shipments/SHP-2045", base=TMS)[1]["notes"])), ("change_request", 1))
+
 call("POST", "/api/admin/reset", auth=True)   # leave the demo clean
 print(f"\n{sum(results)}/{len(results)} checks passed.")
