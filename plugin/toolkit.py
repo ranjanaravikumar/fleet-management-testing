@@ -64,17 +64,33 @@ def _tell_customer_of_fix(case_id: str, shipment_id: str, applied: dict) -> bool
 @tools.post("/shipments/{shipment_id}/apply-fixes", dependencies=[Depends(require_api_key)],
             summary="Apply the safe fixes the shipment check found in other TMS records")
 def apply_shipment_fixes(shipment_id: str, body: Optional[ApplyFixesIn] = None):
-    result = shipment_check(shipment_id)
+    """Fill in a field only if it is still empty when the write happens.
+
+    The write says what it saw (the field was empty). If a person filled it in meanwhile, the TMS refuses, nothing
+    is overwritten, and the person's value stands.
+    """
+    s = tms_client.shipment(shipment_id)
+    result = shipment_check(shipment_id, s=s)
     fixes = [f for f in result["internal_fixes"] if f["fix_class"] == "auto"]
     ref = body.source_ref if body else None
-    shipment, notified = None, False
+    applied = {f["field"]: f["value"] for f in fixes}
+    shipment, notified, conflicts = None, False, []
     if fixes:
-        shipment = tms_client.update_shipment(
-            shipment_id, {f["field"]: f["value"] for f in fixes},
-            f"Filled in from TMS records. {fixes[0]['evidence']}", ref)
-        if ref and ref.startswith("CASE-"):
-            notified = _tell_customer_of_fix(ref, shipment_id, {f["field"]: f["value"] for f in fixes})
-    return {"applied": {f["field"]: f["value"] for f in fixes}, "customer_notified": notified,
+        try:
+            shipment = tms_client.update_shipment(
+                shipment_id, applied, f"Filled in from TMS records. {fixes[0]['evidence']}", ref,
+                expect={field: s.get(field) or "" for field in applied})
+        except HTTPException as e:
+            if e.status_code != 409:
+                raise
+            conflicts, applied = [str(e.detail)], {}
+            tms_client.add_note("shipment", shipment_id,
+                                f"Left alone: {e.detail} The agent did not overwrite it.", action="conflict",
+                                source_ref=ref)
+        else:
+            if ref and ref.startswith("CASE-"):
+                notified = _tell_customer_of_fix(ref, shipment_id, applied)
+    return {"applied": applied, "conflicts": conflicts, "customer_notified": notified,
             "shipment": shipment or tms_client.shipment(shipment_id)}
 
 
@@ -338,7 +354,7 @@ ORDER_WRITABLE = {"origin_country", "dest_country", "origin_zip", "dest_zip", "o
 @tools.post("/orders/apply-safe-fixes", dependencies=[Depends(require_api_key)],
             summary="Apply every 'auto' fix across all orders (dry_run=true only previews)")
 def apply_safe_fixes(dry_run: bool = True, source_ref: Optional[str] = None):
-    applied, remaining = [], []
+    applied, remaining, conflicts = [], [], []
     for o in sorted(tms_client.all_orders(), key=lambda o: o["id"]):
         issues = checks.check_order(o)
         auto = {i["field"]: i["suggested"] for i in issues
@@ -347,9 +363,17 @@ def apply_safe_fixes(dry_run: bool = True, source_ref: Optional[str] = None):
         if auto:
             applied.append({"order_id": o["id"], "changes": {k: {"from": o[k], "to": v} for k, v in auto.items()}})
             if not dry_run:
-                tms_client.update_order(o["id"], auto, "Data sweep: safe automatic fix", source_ref)
+                try:
+                    tms_client.update_order(o["id"], auto, "Data sweep: safe automatic fix", source_ref,
+                                            expect={k: o.get(k) or "" for k in auto})
+                except HTTPException as e:
+                    if e.status_code != 409:
+                        raise
+                    applied.pop()   # a person changed it since the sweep read it: leave it
+                    conflicts.append(o["id"])
     return {
         "dry_run": dry_run,
+        "conflicts": conflicts,
         "orders_fixed": len(applied),
         "fields_fixed": sum(len(a["changes"]) for a in applied),
         "applied": applied,
@@ -410,7 +434,35 @@ def _describe_fix(a: dict) -> str:
     return f"{label} \"{a['from']}\" → {to}"
 
 
+class _Conflict(Exception):
+    """A person changed the order while the review was working on it."""
+
+
 def review_order(order_id: str, case_id: str | None) -> dict:
+    """Review an order. If a person edits it mid-review, start again from what they left; if that happens
+    twice, stop and hand it to a person. The agent never overwrites a person's edit."""
+    detail = ""
+    for _attempt in (1, 2):
+        try:
+            return _review_order(order_id, case_id)
+        except _Conflict as e:
+            detail = str(e)
+    message = "Thanks. Our team will take it from here and reply here."
+    if case_id:
+        with write_lock:
+            conn = get_db()
+            try:
+                c = load_case(conn, case_id)
+                post_to_customer(conn, c, "agent", message)
+                set_status(conn, c, "needs_human", f"The order was being edited while the agent worked. {detail}")
+                conn.commit()
+            finally:
+                conn.close()
+    return {"order_id": order_id, "next_step": "conflict", "applied": [], "message": message, "form": None,
+            "open_issues": []}
+
+
+def _review_order(order_id: str, case_id: str | None) -> dict:
     o = tms_client.order(order_id)
     c = None
     if case_id:
@@ -426,7 +478,13 @@ def review_order(order_id: str, case_id: str | None) -> dict:
     def write(changes: dict, why: str, author=config.AGENT_NAME):
         nonlocal o
         if changes:
-            o = tms_client.update_order(order_id, changes, why, case_id, author=author)
+            try:
+                o = tms_client.update_order(order_id, changes, why, case_id, author=author,
+                                            expect={k: o.get(k) or "" for k in changes})
+            except HTTPException as e:
+                if e.status_code != 409:
+                    raise
+                raise _Conflict(str(e.detail)) from e
 
     # 1. The customer's answers to an earlier question, taken as typed (then checked like everything else).
     answers = (c or {}).get("latest_form_response") or {}

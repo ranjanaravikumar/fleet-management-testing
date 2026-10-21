@@ -89,6 +89,14 @@ When `TMS_EVENTS_URL` is set, the TMS POSTs events to it:
 with `X-Event-Secret: <TMS_EVENTS_SECRET>`. A subscriber that is down never
 blocks the customer; failures show in `GET /api/events/status`.
 
+### Writes that say what they saw (`expect`)
+
+`PATCH /api/shipments/{id}` and `PATCH /api/orders/{id}` accept `expect`: the values you saw when you read the
+record, e.g. `{"truck_id": ""}`. If any of those fields has changed since, nothing is written and the answer is `409`
+naming the new value and who changed it. The check and the write happen together under a write lock. The agent and
+the edit panel both use it, so a person and the agent can't overwrite each other silently. Leave `expect` out for a
+plain write.
+
 ### Tracking alerts
 
 `tracking_alert` is the standard TMS exception flag: `Delivery overdue` when

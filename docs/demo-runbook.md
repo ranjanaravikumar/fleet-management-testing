@@ -150,6 +150,9 @@ On-hold customer:
   times, then handed to a person.
 - **What stops a customer steering the agent?** The classifier can only pick one of five topics. It can't pick an action.
   A reply can still be worded oddly, which is why a person-approval step (ActionHub) is on the roadmap.
+- **What if someone edits a record while the agent is working on it?** A person's edit always wins. The agent writes
+  "only if it still is what I saw"; if not, the TMS refuses, the agent leaves the person's value and says so in a note.
+  See `docs/agent-api-contract.md`, which also has the timings (a problem is noticed within 60 s; a customer note within 5 s).
 - **How many runs does it use?** One run per new problem and per customer request. Follow-ups on a case a person or the
   carrier has are not re-run. Orders use none.
 

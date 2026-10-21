@@ -82,6 +82,20 @@ expect("TMS flags the overdue delivery itself",
        call("GET", "/api/shipments/SHP-1042", base=TMS)[1]["tracking_alert"], "Delivery overdue")
 expect("Lookup through the plugin", call("GET", "/api/lookup", params={"ref": "BOL-88421"})[1].get("id"), "SHP-1042")
 
+# ── Writes say what they saw: a write based on a stale read is refused ─
+cur = call("GET", "/api/shipments/SHP-2049", base=TMS)[1]["po_number"] or ""
+status, _ = call("PATCH", "/api/shipments/SHP-2049", {"po_number": "PO-TEST-1", "reason": "test",
+                 "expect": {"po_number": cur}}, base=TMS, auth=True)
+expect("A write that expected what is there is applied", status, 200)
+status, body = call("PATCH", "/api/shipments/SHP-2049", {"po_number": "PO-TEST-2", "reason": "test",
+                    "expect": {"po_number": cur}}, base=TMS, auth=True)
+expect("A write based on a stale read is refused, and nothing changes",
+       (status, call("GET", "/api/shipments/SHP-2049", base=TMS)[1]["po_number"]), (409, "PO-TEST-1"))
+expect("...and the refusal says what changed", "PO-TEST-1" in str(body.get("detail")), True)
+status, _ = call("PATCH", "/api/orders/SHP45342", {"quote": "999", "reason": "test", "expect": {"quote": "stale"}},
+                 base=TMS, auth=True)
+expect("The same holds for orders", status, 409)
+
 # ── Detector: once per new problem ───────────────────────────────────
 first = call("POST", "/api/detector/run", auth=True)[1]
 expect("Detector opens cases for SHP-1042 and SHP-2048",

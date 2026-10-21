@@ -92,6 +92,29 @@ def _note(conn, entity_type, entity_id, action, message, source_ref=None, author
     return cur.lastrowid
 
 
+def _lock(conn) -> None:
+    """Take the write lock now, so a read-compare-write can't be split by another writer."""
+    conn.execute("BEGIN IMMEDIATE")
+
+
+def _check_expect(conn, entity_type: str, entity_id: str, current: dict, expect: dict | None) -> None:
+    """409 if a field no longer holds the value the caller read (empty and '' are the same).
+
+    This is what keeps a person's edit and the agent's fix from overwriting each other silently: a writer says
+    what it saw, and the write is refused if that has changed since.
+    """
+    if not expect:
+        return
+    stale = {f: current.get(f) for f, was in expect.items() if (current.get(f) or "") != (was or "")}
+    if not stale:
+        return
+    last = _row(conn, "SELECT author, created_at FROM notes WHERE entity_type = ? AND entity_id = ? "
+                      "AND action IN ('update', 'booked') ORDER BY id DESC LIMIT 1", entity_type, entity_id)
+    now_is = "; ".join(f"{FIELD_WORDS.get(f, f)} is now {_friendly_value(f, v)}" for f, v in stale.items())
+    by = f" (last change by {last['author']} at {_friendly_time(last['created_at'])})" if last else ""
+    raise HTTPException(409, f"Changed since you read it: {now_is}{by}. Reload and check before saving.")
+
+
 def _shipment_or_404(conn, shipment_id: str) -> dict:
     s = _row(conn, "SELECT * FROM shipments WHERE id = ?", shipment_id)
     if not s:
@@ -240,6 +263,8 @@ class ShipmentUpdate(BaseModel):
     reason: str = Field(..., description="Why the change is made; saved as a note")
     source_ref: Optional[str] = Field(None, description="Email subject, ticket or other reference")
     author: Optional[str] = Field(None, description="Who made the change, for the note")
+    expect: Optional[dict[str, Optional[str]]] = Field(None, description="What you saw when you read the record, "
+        "as {field: value}. If any of these fields has changed since, nothing is written and the answer is 409")
 
 
 @router.patch("/shipments/{shipment_id}", dependencies=[Depends(require_api_key)],
@@ -247,8 +272,10 @@ class ShipmentUpdate(BaseModel):
 def update_shipment(shipment_id: str, body: ShipmentUpdate):
     conn = get_db()
     try:
+        _lock(conn)
         s = _shipment_or_404(conn, shipment_id)
-        changes = body.model_dump(exclude_none=True, exclude={"reason", "source_ref", "author"})
+        _check_expect(conn, "shipment", shipment_id, s, body.expect)
+        changes = body.model_dump(exclude_none=True, exclude={"reason", "source_ref", "author", "expect"})
         for f in ("delivery_appt_start", "delivery_appt_end", "pickup_appt_start", "pickup_appt_end"):
             if f in changes:
                 try:
@@ -885,6 +912,8 @@ class OrderUpdate(BaseModel):
     reason: str
     source_ref: Optional[str] = None
     author: Optional[str] = None
+    expect: Optional[dict[str, Optional[str]]] = Field(None, description="What you saw when you read the record, "
+        "as {field: value}. If any of these fields has changed since, nothing is written and the answer is 409")
 
 
 @router.patch("/orders/{order_id}", dependencies=[Depends(require_api_key)],
@@ -892,8 +921,10 @@ class OrderUpdate(BaseModel):
 def update_order(order_id: str, body: OrderUpdate):
     conn = get_db()
     try:
+        _lock(conn)
         o = _order_or_404(conn, order_id)
-        changes = body.model_dump(exclude_none=True, exclude={"reason", "source_ref", "author"})
+        _check_expect(conn, "order", order_id, o, body.expect)
+        changes = body.model_dump(exclude_none=True, exclude={"reason", "source_ref", "author", "expect"})
         if not changes:
             raise HTTPException(422, "Nothing to change.")
         sets = ", ".join(f"{k} = :{k}" for k in changes)

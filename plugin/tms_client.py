@@ -82,15 +82,19 @@ def add_note(entity_type: str, entity_id: str, message: str, *, action: str = "n
         "visibility": visibility, "author": author, "author_type": author_type, "source_ref": source_ref})
 
 
-def update_shipment(shipment_id: str, changes: dict, reason: str, source_ref: str | None = None) -> dict:
+def update_shipment(shipment_id: str, changes: dict, reason: str, source_ref: str | None = None,
+                    expect: dict | None = None) -> dict:
+    """Change a shipment. `expect` is what we saw when we read it: if a person changed any of it since, the TMS
+    refuses with 409 and nothing is written (the person's change stands)."""
     return write("PATCH", f"/api/shipments/{shipment_id}",
-                 {**changes, "reason": reason, "source_ref": source_ref, "author": config.AGENT_NAME})
+                 {**changes, "reason": reason, "source_ref": source_ref, "author": config.AGENT_NAME,
+                  "expect": expect})
 
 
 def update_order(order_id: str, changes: dict, reason: str, source_ref: str | None = None,
-                 author: str = config.AGENT_NAME) -> dict:
+                 author: str = config.AGENT_NAME, expect: dict | None = None) -> dict:
     return write("PATCH", f"/api/orders/{order_id}",
-                 {**changes, "reason": reason, "source_ref": source_ref, "author": author})
+                 {**changes, "reason": reason, "source_ref": source_ref, "author": author, "expect": expect})
 
 
 def customer_notes_after(note_id: int, limit: int = 100) -> list[dict]:

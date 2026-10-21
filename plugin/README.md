@@ -131,3 +131,8 @@ TMS's notes unless the caller sends its own `author`.
 `event` is `case.created` or `case.customer_replied`. Detector cases have
 `"channel": "monitor"` and a first message from "Qubiway monitoring"
 describing the problem.
+
+## When a person edits at the same time
+The agent writes "if it still is what I saw". If a person changed the field meanwhile, the TMS refuses (409) and the
+agent leaves the person's value, adds a "Left alone" note, and for an order carries on from their version once, then
+hands over. Check it with `python -m plugin.race_test` (TMS up, plugin stopped). Details: `docs/agent-api-contract.md`.

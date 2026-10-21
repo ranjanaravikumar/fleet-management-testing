@@ -95,6 +95,7 @@ function AutoRating({ o, onAccept }) {
     try {
       await api.patch(`/api/orders/${o.id}`, {
         quote: String(value),
+        expect: { quote: o.quote ?? '' },   // refuse if someone quoted it while this panel was open
         reason: value === r.suggested_rate
           ? `Auto-rate accepted: ${r.lane}, ${r.weight_lbs.toLocaleString()} lb.`
           : `Auto-rate overridden from ${money(r.suggested_rate)} to ${money(value)}.`,

@@ -486,10 +486,13 @@ function EditShipment({ s, onDone, onCancel }) {
   const drivers = useLiveData('/api/drivers', 60000);
   const trucks = useLiveData('/api/trucks', 60000);
   const [form, setForm] = useState(() => initialForm(s));
+  // What the record looked like when editing began. `s` keeps refreshing, and the agent or a colleague may change
+  // the record meanwhile; only fields YOU change are saved, and each is saved "if it still is what I saw".
+  const [baseline] = useState(() => ({ form: initialForm(s), raw: Object.fromEntries(EDIT_FIELDS.map(f => [f, s[f] ?? ''])) }));
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const start = initialForm(s);
+  const start = baseline.form;
   const changed = EDIT_FIELDS.filter(f => form[f] !== start[f]);
   const set = f => e => setForm(v => ({ ...v, [f]: e.target.value }));
 
@@ -498,7 +501,8 @@ function EditShipment({ s, onDone, onCancel }) {
     setSaving(true); setError('');
     try {
       const body = Object.fromEntries(changed.map(f => [f, TIME_FIELDS.has(f) ? fromPhxInput(form[f]) : form[f].trim()]));
-      await api.patch(`/api/shipments/${s.id}`, { ...body, reason: reason.trim(), author: author() }, { auth: true });
+      const expect = Object.fromEntries(changed.map(f => [f, baseline.raw[f]]));
+      await api.patch(`/api/shipments/${s.id}`, { ...body, expect, reason: reason.trim(), author: author() }, { auth: true });
       onDone();
     } catch (err) {
       setError(err.message);

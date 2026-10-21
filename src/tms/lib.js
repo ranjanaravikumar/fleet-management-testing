@@ -105,6 +105,7 @@ export const NOTE_ACTION = {
   case_reply:         'Reply',
   problem_detected:   'Problem detected',
   handoff:            'Needs a person',
+  conflict:           'Left alone',
   email_received:     'Email received',
   asked_carrier:      'Asked carrier',
   data_sweep:         'Data sweep',
