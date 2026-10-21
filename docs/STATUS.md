@@ -1,7 +1,7 @@
 # Status: 2026-10-20
 
 ## Done
-- Plain TMS (`backend/tms`) + plugin (`plugin/`) as two services; the agent's work shows only as notes
+- Plain TMS (`backend/tms`) + plugin (`plugin/`), two services; the agent's work shows only as notes
 - Fuller TMS: Today dashboard, dispatch board, map, customers, carriers, fleet; shipment grid
   (filters, saved views, export, keyboard); Stops/Documents/Charges/Check calls tabs; edit panel;
   printable BOL and rate confirmation; invoicing; book a quoted order; PO/PRO refs; staff order
@@ -14,8 +14,7 @@
 - Gap work (this session), all in the plugin so the Qubi flows stay small:
   - `POST /api/agent-tools/cases/{id}/decide`: the classifier's topic + confidence, then code
     guardrails (change request, quote question, unsure classifier -> `needs_human`)
-  - `plugin/dispatch.py`: order cases never go to Flow 1; the plugin reviews an order again when
-    the customer answers (`ORDER_REVIEW_MODE` now defaults to `plugin`)
+  - `plugin/dispatch.py`: order cases never go to Flow 1; the plugin re-reviews when the customer answers
   - `apply-fixes` tells a customer who asked (not a detector case) what was filled in
   - `POST /api/agent-tools/shipments/{id}/carrier-reply`: Flow 2 in one call
   - A customer who asked is told when their case goes to a person or the carrier (once; not for
