@@ -10,7 +10,7 @@ carrier said) or write it (the email, the reply). Every decision and every write
 ## Flow 1: SSA - Resolve shipment issue
 
 Trigger: the plugin's webhook, `{"event", "case_id", "case": {...}}`. Shipment cases only; the plugin works order
-cases itself. Import `docs/ssa-resolve-shipment-issue.v2.workflow.json`, or build it:
+cases itself. Import `docs/ssa-resolve-shipment-issue.v2.workflow.json` (it comes in as a separate flow named "SSA - Case Handler"), or build it:
 
 ```
 Webhook
