@@ -70,6 +70,7 @@ Open http://localhost:8100/docs to see every endpoint.
 | `NOTES_POLL_SECONDS` | `5` | How often the notes watcher checks |
 | `ORDER_REVIEW_MODE` | `plugin` | Who works order cases (a quote request, a question on an order, an answer to the agent). Anything but `qubi`: the plugin does, and they never reach Flow 1, which works on shipments. `qubi`: send them to Flow 1 |
 | `CLASSIFIER_MIN_CONFIDENCE` | `0.6` | The request classifier in Flow 1 reports how sure it is. Below this, the request goes to a person |
+| `RESEND_ENABLED` | `true` | A case still `new` after `RESEND_AFTER_SECONDS` (default 180) is sent to Qubi again, up to `RESEND_MAX_TRIES` (default 3) times, then handed to a person. Checked every `RESEND_INTERVAL_SECONDS` (60) |
 | `PLUGIN_DB_PATH` | `plugin/plugin.db` | The plugin's own database (cases, detected problems) |
 | `CORS_ORIGINS` | `http://localhost:5173` | Web pages allowed to call the plugin |
 
@@ -100,7 +101,7 @@ Writing needs `X-API-Key` (🔑).
 | `POST /api/cases/{id}/claim` 🔑 | Take a new case (409 if already taken) |
 | `POST /api/cases/{id}/messages` 🔑 | Write to the customer (becomes a customer-visible note in the TMS); can set `status` and send a `form` |
 | `PATCH /api/cases/{id}` 🔑 | Change a case's status. `needs_human` leaves an internal "Needs a person" note for staff. For a shipment case a customer started, `needs_human` and `awaiting_carrier` also post a short customer-visible notice (once). Detector cases and order cases get none |
-| `GET /api/cases/webhook-status` | Whether the Qubi webhook is set up, and recent attempts |
+| `GET /api/cases/webhook-status` | Whether the Qubi webhook is set up, recent attempts, and `not_sent`: follow-up notes on a case the carrier or a person already has, which are deliberately not sent to Flow 1 again |
 | `POST /api/agent-tools/cases/{id}/decide` 🔑 | **Flow 1's one decision call.** Takes the classifier's `category` and `confidence`, runs the shipment check, and applies the guardrails: change requests and quote questions always go to a person, an unsure classifier goes to a person, a detector case keeps its own topic. Returns the same fields as the shipment check, plus `category` and `category_source` (`ai`, `rules` or `detector`) |
 | `GET /api/agent-tools/shipments/{id}/check?sender=` | What should the agent do about this shipment (no case, no classifier) |
 | `POST /api/agent-tools/shipments/{id}/apply-fixes` 🔑 | Fill in what other TMS records already know. Send the case ID as `source_ref`: if a customer asked (not a detector case), they are told what was filled in |
@@ -112,6 +113,7 @@ Writing needs `X-API-Key` (🔑).
 | `POST /api/orders/{id}/approve-fix` 🔑 | A person approves a suggested fix (e.g. from an ActionHub task) |
 | `POST /events/tms` | Where the TMS sends its events |
 | `GET /api/detector/status`, `GET /api/detector/problems` | Detector and notes watcher: last runs, problems already reported |
+| `POST /api/detector/resend-stuck` 🔑 | Run the retry sweep now (`min_age_seconds`, `case_id` optional) |
 | `POST /api/detector/run` 🔑 | Run the detector now |
 | `POST /api/admin/reset` 🔑 | Reset the TMS demo data and clear the plugin's cases |
 | `GET /health` | Is the plugin up, and can it reach the TMS |

@@ -135,6 +135,21 @@ def _insert_message(conn, case_id, author_type, author_name, body, form=None, fo
     conn.execute("UPDATE cases SET updated_at = ? WHERE id = ?", (stamp(), case_id))
 
 
+def unwrap_agent_text(text: str) -> str:
+    """An AI step sometimes hands back its reply as JSON text, {"message": "..."}. The customer should see the sentence."""
+    t = text.strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t).strip()
+    if t.startswith("{") and t.endswith("}"):
+        try:
+            data = json.loads(t)
+        except ValueError:
+            return text
+        if isinstance(data, dict) and isinstance(data.get("message"), str) and data["message"].strip():
+            return data["message"].strip()
+    return text
+
+
 def _note_text(body: str, form: dict | None) -> str:
     """The message as the customer reads it in the TMS Notes tab, with any questions spelled out."""
     if not form or not form.get("fields"):
@@ -538,7 +553,8 @@ def list_cases(status: Optional[str] = Query(None, description="A status, severa
 
 @cases.get("/webhook-status", summary="Is the Qubi webhook set up, and what happened recently?")
 def webhook_status():
-    return qubi.status()
+    from plugin import dispatch   # late import: dispatch imports this module
+    return {**qubi.status(), "not_sent": list(dispatch.skipped)}
 
 
 @cases.get("/{case_id}", summary="One case with its conversation")
@@ -612,7 +628,7 @@ def add_message(case_id: str, body: MessageIn):
             if body.author_type == "system":
                 _insert_message(conn, case_id, "system", body.author_name or "Qubiway", body.body)
             else:
-                post_to_customer(conn, c, body.author_type, body.body, form=body.form,
+                post_to_customer(conn, c, body.author_type, unwrap_agent_text(body.body), form=body.form,
                                  author_name=body.author_name)
             if body.status and body.status != c["status"]:
                 set_status(conn, c, body.status, None, notify=body.author_type == "system")

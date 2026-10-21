@@ -5,11 +5,12 @@ Same paths and answers as the agent-integrated TMS had, so the Qubi flows
 are unchanged. The difference is underneath: every read and every fix goes
 through the TMS's normal API.
 """
+import json
 import re
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from plugin import cases as case_store, checks, config, tms_client
 from plugin.auth import require_api_key
@@ -107,6 +108,22 @@ class DecideIn(BaseModel):
     @classmethod
     def _blank(cls, value):
         return _blank_to_none(value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unwrap(cls, data):
+        """If the whole classifier output arrived as JSON text in `category`, read the fields out of it."""
+        if isinstance(data, dict) and isinstance(data.get("category"), str) and data["category"].strip().startswith(("{", "`")):
+            text = re.sub(r"^```(?:json)?\s*|\s*```$", "", data["category"].strip()).strip()
+            try:
+                inner = json.loads(text)
+            except ValueError:
+                return data
+            if isinstance(inner, dict):
+                given = _blank_to_none(data.get("confidence"))
+                data = {**data, "category": inner.get("category"),
+                        "confidence": given if given is not None else inner.get("confidence")}
+        return data
 
 
 def _final_category(c: dict, body: DecideIn) -> tuple[str, str, str | None]:

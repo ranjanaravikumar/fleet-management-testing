@@ -100,6 +100,12 @@ def notes_watcher_run():
     return {"handled": detector.run_notes_watcher()}
 
 
+@app.post("/api/detector/resend-stuck", tags=["Detector"], dependencies=[Depends(require_api_key)],
+          summary="Send again any case still 'new' (and hand it to a person after too many tries)")
+def resend_stuck(min_age_seconds: Optional[int] = None, case_id: Optional[str] = None):
+    return detector.run_resend_sweep(min_age_seconds, case_id)
+
+
 @app.get("/api/detector/problems", tags=["Detector"],
          summary="Problems already reported, and the case each one opened")
 def detector_problems():

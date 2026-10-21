@@ -21,7 +21,10 @@
     detector or order cases)
   - Truck/driver questions are answered from the TMS when both are on record (even if overdue);
     a change request's handoff note briefs operations (ask, shipment, carrier contact)
-  - Smoke test 60/60 with a Qubi webhook, 58/58 without
+  - A note on a case the carrier or a person already has no longer restarts Flow 1 (`not_sent`
+    in `/api/cases/webhook-status`); a case stuck as `new` is re-sent up to 3 times, then handed to a person
+  - An agent reply or classifier answer that arrives as JSON text is unwrapped by the plugin
+  - Smoke test 66/66 with a Qubi webhook, 63/63 without
 - Docs: `docs/qubi-flows.md` (final Flow 1 and Flow 2), `plugin/README.md`
 
 ## Decisions

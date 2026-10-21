@@ -13,16 +13,19 @@ Notes watcher (every NOTES_POLL_SECONDS, 5 by default):
     Reads new customer notes from the TMS. A note on a record with a case
     waiting for the customer is their reply; any other note is a new request.
 """
+import json
 import threading
 import traceback
+from datetime import datetime
 
 from plugin import cases, config, dispatch, store, tms_client
-from plugin.clock import stamp
+from plugin.clock import PHOENIX, parse, stamp
+from plugin.store import write_lock
 from plugin.toolkit import shipment_check
 
 _stop = threading.Event()
 _threads: list[threading.Thread] = []
-_last = {"detector": None, "notes": None}
+_last = {"detector": None, "notes": None, "resend": None}
 
 
 # ── Detector ─────────────────────────────────────────────────────────
@@ -112,6 +115,53 @@ def run_notes_watcher() -> list[dict]:
     return handled
 
 
+# ── Retry sweep ──────────────────────────────────────────────────────
+
+def _hand_to_person(case_id: str, reason: str) -> None:
+    with write_lock:
+        conn = store.get_db()
+        try:
+            c = cases.load_case(conn, case_id)
+            cases.set_status(conn, c, "needs_human", reason)
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def run_resend_sweep(min_age_seconds: int | None = None, case_id: str | None = None) -> dict:
+    """Send again any case still 'new' after min_age_seconds. After RESEND_MAX_TRIES it goes to a person.
+
+    A case Qubi worked has moved on (resolved, with the carrier, with a person), so one still 'new' means
+    the webhook never arrived or the flow failed before it could say anything.
+    """
+    age = config.RESEND_AFTER_SECONDS if min_age_seconds is None else min_age_seconds
+    resent, gave_up = [], []
+    conn = store.get_db()
+    try:
+        stuck = [r["id"] for r in store.rows(conn, "SELECT id FROM cases WHERE status = 'new' ORDER BY created_at")]
+    finally:
+        conn.close()
+    for cid in stuck:
+        if case_id and cid != case_id:
+            continue
+        c = cases.get_case(cid)
+        if c["record_type"] == "shipment" and not config.QUBI_WEBHOOK_URL:
+            continue   # nowhere to send it
+        state = json.loads(store.kv_get(f"resend:{cid}") or '{"tries": 0, "at": null}')
+        last = parse(state["at"]) or parse(c["created_at"])
+        if (datetime.now(PHOENIX) - last).total_seconds() < age:
+            continue
+        if state["tries"] >= config.RESEND_MAX_TRIES:
+            _hand_to_person(cid, f"The agent didn't pick this up after {state['tries']} tries.")
+            gave_up.append(cid)
+            continue
+        store.kv_set(f"resend:{cid}", json.dumps({"tries": state["tries"] + 1, "at": stamp()}))
+        dispatch.route("case.created", c)
+        resent.append(cid)
+    _last["resend"] = {"at": stamp(), "resent": resent, "gave_up": gave_up}
+    return {"resent": resent, "gave_up": gave_up}
+
+
 # ── Background loop ──────────────────────────────────────────────────
 
 def _loop(name: str, interval: int, job):
@@ -131,6 +181,8 @@ def start() -> None:
         jobs.append(("detector", config.DETECTOR_INTERVAL_SECONDS, run_detector))
     if config.WATCH_CUSTOMER_NOTES:
         jobs.append(("notes", config.NOTES_POLL_SECONDS, run_notes_watcher))
+    if config.RESEND_ENABLED:
+        jobs.append(("resend", config.RESEND_INTERVAL_SECONDS, run_resend_sweep))
     for name, interval, job in jobs:
         t = threading.Thread(target=_loop, args=(name, interval, job), name=name, daemon=True)
         t.start()
@@ -148,4 +200,6 @@ def status() -> dict:
         "notes_watcher": {"enabled": config.WATCH_CUSTOMER_NOTES, "interval_seconds": config.NOTES_POLL_SECONDS,
                           "cursor": store.kv_get("notes_cursor"), "last_run": _last["notes"],
                           "repeated_questions_reused": cases.repeated_answers_count()},
+        "resend_sweep": {"enabled": config.RESEND_ENABLED, "after_seconds": config.RESEND_AFTER_SECONDS,
+                         "max_tries": config.RESEND_MAX_TRIES, "last_run": _last["resend"]},
     }

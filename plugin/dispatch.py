@@ -6,10 +6,15 @@ question about an order, their answer to the agent's question) are handled
 here, so they never reach Flow 1 and fail there. Set ORDER_REVIEW_MODE=qubi to
 send them to Qubi anyway.
 """
+from collections import deque
+
 from fastapi import HTTPException
 
 from plugin import cases, config, qubi
+from plugin.clock import stamp
 from plugin.store import get_db, write_lock
+
+skipped: deque = deque(maxlen=20)   # follow-ups on a case that isn't waiting for the agent
 
 
 def orders_handled_by_plugin() -> bool:
@@ -20,8 +25,12 @@ def route(event: str, case: dict) -> None:
     """Send a case event to whoever works it. Never raises for a Qubi delivery problem."""
     if case["record_type"] == "order" and orders_handled_by_plugin():
         _handle_order_case(event, case)
-    else:
+    elif case["status"] in cases.READY_FOR_AGENT:
         qubi.notify(event, case)
+    else:
+        # A customer added a note to a case the carrier or a person already has. Running Flow 1 again could
+        # repeat a carrier email or resolve something a person owns. The note is on the case and the record.
+        skipped.appendleft({"at": stamp(), "event": event, "case_id": case["id"], "status": case["status"]})
 
 
 def _handle_order_case(event: str, case: dict) -> None:

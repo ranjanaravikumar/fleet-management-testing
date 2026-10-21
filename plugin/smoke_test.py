@@ -189,6 +189,26 @@ expect("A customer whose case goes to the carrier is told", "We're checking with
 patch_case(monitor["id"], "awaiting_carrier")
 expect("A case the detector found tells the customer nothing", "We're checking with the carrier and will update you here." in visible("SHP-1042"), False)
 
+# ── JSON that arrives as text is still read ──────────────────────────
+call("POST", f"/api/cases/{cid}/messages", {"author_type": "agent",
+     "body": '{"message": "A plain sentence for the customer."}'}, auth=True)
+shown = visible("SHP-2049")
+expect("An agent message that arrives as JSON text is shown as the sentence",
+       ("A plain sentence for the customer." in shown, any(m.startswith("{") for m in shown)), (True, False))
+d = decide(cid, {"category": '{"category": "status_update", "confidence": 0.9}'})
+expect("A classifier answer that arrives as JSON text is still read",
+       (d["category"], d["category_source"]), ("status_update", "ai"))
+
+# ── A follow-up on a case someone already has doesn't restart Flow 1 ─
+call("POST", "/api/portal/notes", {"entity_type": "shipment", "entity_id": "SHP-2049",
+     "message": "Where is it now?"}, base=TMS)
+call("POST", "/api/detector/run-notes", auth=True)
+w = call("GET", "/api/cases/webhook-status")[1]
+expect("A follow-up on a case with the carrier is not sent to Flow 1 again",
+       ([a for a in w["recent"] if a["case_id"] == cid and a["event"] == "case.customer_replied"],
+        [n["case_id"] for n in w["not_sent"]]), ([], [cid]))
+expect("...but it is on the case", call("GET", f"/api/cases/{cid}")[1]["messages"][-1]["body"], "Where is it now?")
+
 # ── Order events and review (Act 4 on a new order) ───────────────────
 status, order = call("POST", "/api/portal/orders", {
     "origin_zip": "85034", "origin_state": "arizona", "origin_country": "United States",
@@ -244,6 +264,19 @@ expect("The same reply twice changes nothing", (r["recorded"], r["skipped"], r["
 r = call("POST", "/api/agent-tools/shipments/SHP-2049/carrier-reply", {
     "arrived_at": (t0 + timedelta(hours=5)).isoformat(timespec="seconds")}, auth=True)[1]
 expect("A time in the future is not recorded", (r["recorded"], len(r["problems"])), ([], 1))
+
+# ── Retry sweep ──────────────────────────────────────────────────────
+sweep = lambda: call("POST", "/api/detector/resend-stuck", params={"min_age_seconds": 0, "case_id": ask1042["id"]},
+                     auth=True)[1]
+if hook["configured"]:
+    outcomes = [sweep() for _ in range(4)]
+    expect("A case stuck as new is sent again up to the limit, then handed to a person",
+           ([o["resent"] for o in outcomes], outcomes[3]["gave_up"]),
+           ([[ask1042["id"]]] * 3 + [[]], [ask1042["id"]]))
+    expect("...and the customer is told",
+           "Thanks. Our operations team is looking at this and will reply here." in visible("SHP-1042"), True)
+else:
+    expect("With no Qubi webhook a shipment case isn't resent", sweep(), {"resent": [], "gave_up": []})
 
 # ── Bug fixes: delivered shipments + repeated questions ───────────────
 # Reset so SHP-2045 has no open cases.

@@ -41,6 +41,13 @@ ORDER_REVIEW_MODE = os.environ.get("ORDER_REVIEW_MODE", "plugin").strip().lower(
 # Below this, the request goes to a person instead of being answered.
 CLASSIFIER_MIN_CONFIDENCE = float(os.environ.get("CLASSIFIER_MIN_CONFIDENCE", "0.6"))
 
+# Retry sweep: a case still "new" this long after it was sent to Qubi (Qubi or the tunnel was down, or the
+# flow failed) is sent again, up to RESEND_MAX_TRIES times, then handed to a person.
+RESEND_ENABLED = _flag("RESEND_ENABLED", True)
+RESEND_AFTER_SECONDS = int(os.environ.get("RESEND_AFTER_SECONDS", "180"))
+RESEND_MAX_TRIES = int(os.environ.get("RESEND_MAX_TRIES", "3"))
+RESEND_INTERVAL_SECONDS = int(os.environ.get("RESEND_INTERVAL_SECONDS", "60"))
+
 PLUGIN_DB_PATH = os.environ.get("PLUGIN_DB_PATH", os.path.join(os.path.dirname(__file__), "plugin.db"))
 
 CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",")]
