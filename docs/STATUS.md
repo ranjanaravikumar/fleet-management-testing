@@ -17,7 +17,9 @@
     the customer answers (`ORDER_REVIEW_MODE` now defaults to `plugin`)
   - `apply-fixes` tells a customer who asked (not a detector case) what was filled in
   - `POST /api/agent-tools/shipments/{id}/carrier-reply`: Flow 2 in one call
-  - Smoke test 51/51 with a Qubi webhook, 49/49 without
+  - A customer who asked is told when their case goes to a person or the carrier (once; not for
+    detector or order cases)
+  - Smoke test 56/56 with a Qubi webhook, 54/54 without
 - Docs: `docs/qubi-flows.md` (final Flow 1 and Flow 2), `plugin/README.md`
 
 ## Decisions

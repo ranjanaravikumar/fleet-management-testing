@@ -99,7 +99,7 @@ Writing needs `X-API-Key` (🔑).
 | `POST /api/cases` 🔑 | Open a case from another channel, e.g. an email workflow |
 | `POST /api/cases/{id}/claim` 🔑 | Take a new case (409 if already taken) |
 | `POST /api/cases/{id}/messages` 🔑 | Write to the customer (becomes a customer-visible note in the TMS); can set `status` and send a `form` |
-| `PATCH /api/cases/{id}` 🔑 | Change a case's status. `needs_human` also leaves an internal "Needs a person" note for staff |
+| `PATCH /api/cases/{id}` 🔑 | Change a case's status. `needs_human` leaves an internal "Needs a person" note for staff. For a shipment case a customer started, `needs_human` and `awaiting_carrier` also post a short customer-visible notice (once). Detector cases and order cases get none |
 | `GET /api/cases/webhook-status` | Whether the Qubi webhook is set up, and recent attempts |
 | `POST /api/agent-tools/cases/{id}/decide` 🔑 | **Flow 1's one decision call.** Takes the classifier's `category` and `confidence`, runs the shipment check, and applies the guardrails: change requests and quote questions always go to a person, an unsure classifier goes to a person, a detector case keeps its own topic. Returns the same fields as the shipment check, plus `category` and `category_source` (`ai`, `rules` or `detector`) |
 | `GET /api/agent-tools/shipments/{id}/check?sender=` | What should the agent do about this shipment (no case, no classifier) |

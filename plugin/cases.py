@@ -159,7 +159,17 @@ def add_system_message(conn, case_id: str, body: str, author_name: str = "Qubiwa
     _insert_message(conn, case_id, "system", author_name, body)
 
 
-def set_status(conn, c: dict, status: str, reason: str | None):
+# What a customer who asked is told when their case changes hands. Shipment cases only: order
+# cases already get their own messages, and a case the detector found has no customer to tell.
+CUSTOMER_ACK = {
+    "needs_human": "Thanks. Our operations team is looking at this and will reply here.",
+    "awaiting_carrier": "We're checking with the carrier and will update you here.",
+}
+
+
+def set_status(conn, c: dict, status: str, reason: str | None, notify: bool = True):
+    """Change a case's status. Pass notify=False when the caller has just told the customer itself."""
+    changed = status != c["status"]
     resolved_at = stamp() if status == "resolved" else None
     conn.execute("UPDATE cases SET status = ?, updated_at = ?, resolved_at = ? WHERE id = ?",
                  (status, stamp(), resolved_at, c["id"]))
@@ -170,6 +180,8 @@ def set_status(conn, c: dict, status: str, reason: str | None):
                             f"Needs a person: {CATEGORIES.get(c['category'], c['category'])} ({c['id']})."
                             + (f" {reason}" if reason else ""),
                             action="handoff", source_ref=c["id"])
+    if notify and changed and status in CUSTOMER_ACK and c["shipment_id"] and c["channel"] != "monitor":
+        post_to_customer(conn, c, "agent", CUSTOMER_ACK[status])
 
 
 def _record(shipment_id: str | None, order_id: str | None) -> dict:
@@ -577,7 +589,7 @@ def add_message(case_id: str, body: MessageIn):
                 post_to_customer(conn, c, body.author_type, body.body, form=body.form,
                                  author_name=body.author_name)
             if body.status and body.status != c["status"]:
-                set_status(conn, c, body.status, None)
+                set_status(conn, c, body.status, None, notify=body.author_type == "system")
             conn.commit()
             return load_case(conn, case_id)
         finally:

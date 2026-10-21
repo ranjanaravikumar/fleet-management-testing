@@ -130,6 +130,9 @@ call("POST", f"/api/cases/{req['id']}/messages", {"author_type": "agent", "statu
      "body": "Our operations team is on it."}, auth=True)
 internal = call("GET", "/api/notes", params={"entity_id": "SHP-2048", "action": "handoff"}, base=TMS)[1]
 expect("Handoff left as an internal note for staff", any(n["action"] == "handoff" for n in internal), True)
+visible = lambda ship: [n["message"] for n in call("GET", f"/api/portal/shipments/{ship}", base=TMS)[1]["notes"]]
+expect("A message posted with a status doesn't add a second notice",
+       "Thanks. Our operations team is looking at this and will reply here." not in visible("SHP-2048"), True)
 
 call("POST", "/api/portal/notes", {"entity_type": "shipment", "entity_id": "SHP-2049",
      "message": "Hi, where is my shipment right now?"}, base=TMS)
@@ -162,6 +165,17 @@ status, hold = call("POST", "/api/customer-requests", {"ref": "SHP-2051", "chann
                     "message": "Where is my shipment?"})
 d = decide(hold["id"], {"category": "status_update", "confidence": 0.9})
 expect("A shipment on an account on hold goes to a person", d["recommendation"], "needs_human")
+
+# ── A customer who asked is told when the case changes hands ─────────
+patch_case = lambda case_id, status_: call("PATCH", f"/api/cases/{case_id}", {"status": status_}, auth=True)[1]
+patch_case(cid, "needs_human")
+expect("A customer whose case goes to a person is told", visible("SHP-2049").count("Thanks. Our operations team is looking at this and will reply here."), 1)
+patch_case(cid, "needs_human")
+expect("...and only once", visible("SHP-2049").count("Thanks. Our operations team is looking at this and will reply here."), 1)
+patch_case(cid, "awaiting_carrier")
+expect("A customer whose case goes to the carrier is told", "We're checking with the carrier and will update you here." in visible("SHP-2049"), True)
+patch_case(monitor["id"], "awaiting_carrier")
+expect("A case the detector found tells the customer nothing", "We're checking with the carrier and will update you here." in visible("SHP-1042"), False)
 
 # ── Order events and review (Act 4 on a new order) ───────────────────
 status, order = call("POST", "/api/portal/orders", {

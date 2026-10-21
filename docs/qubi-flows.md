@@ -51,6 +51,12 @@ under 80 words, no double quotes or line breaks in the message.
 | Detector case | keeps its own topic; the classifier's answer is ignored |
 | Classifier gives nothing usable | the plugin's keyword reading is used |
 
+### What the customer sees
+Only customer-visible notes show in the portal. The reply writer's answer, an applied-fix message, and the carrier's
+confirmation are visible. When a case a customer started moves to `needs_human` or `awaiting_carrier`, the plugin
+adds a notice by itself ("Our operations team is looking at this…" / "We're checking with the carrier…"), once. Flow 1
+doesn't need a node for it. Notes the flow writes (resolved, drafted email, no automatic action) are internal.
+
 ## Flow 2: SSA - Carrier reply
 
 Trigger: Gmail (IntegrationHub), a new email whose subject contains `[SHP-`.

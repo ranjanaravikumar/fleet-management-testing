@@ -270,7 +270,8 @@ def carrier_reply(shipment_id: str, body: CarrierReplyIn):
                     post_to_customer(conn, c, "agent", customer_text)
                 if outcome != c["status"]:
                     set_status(conn, c, outcome, "; ".join(problems) or (
-                        "The carrier's reply had no arrival or delivery time." if outcome == "needs_human" else None))
+                        "The carrier's reply had no arrival or delivery time." if outcome == "needs_human" else None),
+                        notify=customer_text is None)
                 conn.commit()
                 case_status = outcome
             finally:
