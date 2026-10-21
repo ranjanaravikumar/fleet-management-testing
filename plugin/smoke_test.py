@@ -130,6 +130,9 @@ call("POST", f"/api/cases/{req['id']}/messages", {"author_type": "agent", "statu
      "body": "Our operations team is on it."}, auth=True)
 internal = call("GET", "/api/notes", params={"entity_id": "SHP-2048", "action": "handoff"}, base=TMS)[1]
 expect("Handoff left as an internal note for staff", any(n["action"] == "handoff" for n in internal), True)
+brief = next((n["message"] for n in internal if "Mesa warehouse" in n["message"]), "")
+expect("A change request's handoff tells operations what was asked and who the carrier is",
+       all(part in brief for part in ("Mesa warehouse", "Carrier:", "Nothing has been changed or sent")), True)
 visible = lambda ship: [n["message"] for n in call("GET", f"/api/portal/shipments/{ship}", base=TMS)[1]["notes"]]
 expect("A message posted with a status doesn't add a second notice",
        "Thanks. Our operations team is looking at this and will reply here." not in visible("SHP-2048"), True)
@@ -161,6 +164,15 @@ monitor = open_case(shipment_id="SHP-1042")
 d = decide(monitor["id"], {"category": "other", "confidence": 0.99})
 expect("A detector case keeps its own topic and still goes to the carrier",
        (d["recommendation"], d["category_source"]), ("ask_carrier", "detector"))
+status, ask1042 = call("POST", "/api/customer-requests", {"shipment_id": "SHP-1042", "category": "truck_number",
+                        "channel": "email", "message": "Who is the driver and which truck?"})
+d = decide(ask1042["id"], {"category": "truck_number", "confidence": 0.95})
+expect("A truck question on an overdue shipment is answered from the TMS",
+       (d["recommendation"], d["category_source"]), ("answer_from_tms", "ai"))
+d = decide(ask1042["id"], {"category": "status_update", "confidence": 0.95})
+expect("A status question on the same overdue shipment still goes to the carrier", d["recommendation"], "ask_carrier")
+d = decide(ask1042["id"], {"category": "truck_number", "confidence": 0.3})
+expect("...and an unsure classifier still goes to a person", d["recommendation"], "needs_human")
 status, hold = call("POST", "/api/customer-requests", {"ref": "SHP-2051", "channel": "email",
                     "message": "Where is my shipment?"})
 d = decide(hold["id"], {"category": "status_update", "confidence": 0.9})
@@ -215,7 +227,7 @@ if hook["configured"]:
 phoenix = timezone(timedelta(hours=-7))
 t0 = datetime.now(phoenix)
 iso_ago = lambda hours: (t0 - timedelta(hours=hours)).isoformat(timespec="seconds")
-c1042 = open_case(shipment_id="SHP-1042")
+c1042 = open_case(shipment_id="SHP-1042", channel="monitor")
 status, r = call("POST", "/api/agent-tools/shipments/SHP-1042/carrier-reply", {
     "case_id": c1042["id"], "arrived_at": iso_ago(3), "delivered_at": iso_ago(2), "signed_by": "J. Ortiz",
     "summary": "Delivered and signed.", "source_ref": "[SHP-1042] test"}, auth=True)

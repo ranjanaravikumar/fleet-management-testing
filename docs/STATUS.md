@@ -19,7 +19,9 @@
   - `POST /api/agent-tools/shipments/{id}/carrier-reply`: Flow 2 in one call
   - A customer who asked is told when their case goes to a person or the carrier (once; not for
     detector or order cases)
-  - Smoke test 56/56 with a Qubi webhook, 54/54 without
+  - Truck/driver questions are answered from the TMS when both are on record (even if overdue);
+    a change request's handoff note briefs operations (ask, shipment, carrier contact)
+  - Smoke test 60/60 with a Qubi webhook, 58/58 without
 - Docs: `docs/qubi-flows.md` (final Flow 1 and Flow 2), `plugin/README.md`
 
 ## Decisions

@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from plugin import config, qubi, tms_client
 from plugin.auth import require_api_key
-from plugin.clock import stamp
+from plugin.clock import PHOENIX, parse, stamp
 from plugin.store import get_db, row, rows, write_lock
 
 cases = APIRouter(prefix="/api/cases", tags=["Cases (Flow 1)"])
@@ -167,6 +167,31 @@ CUSTOMER_ACK = {
 }
 
 
+def _when(iso_text: str | None) -> str:
+    if not iso_text:
+        return "not scheduled"
+    return parse(iso_text).astimezone(PHOENIX).strftime("%b %d, %I:%M %p").replace(" 0", " ")
+
+
+def _change_brief(c: dict) -> str:
+    """For operations: what the customer asked to change, and who the carrier is if it goes ahead.
+
+    The agent never contacts the carrier about a change: a person decides first.
+    """
+    asked = next((m["body"] for m in c["messages"] if m["author_type"] == "customer"), None)
+    try:
+        s = tms_client.shipment(c["shipment_id"])
+    except Exception:  # noqa: BLE001 — the brief is a courtesy; never block the handoff on it
+        return ""
+    carrier = s.get("carrier_name") or "no carrier recorded"
+    if s.get("carrier_email"):
+        carrier += f" <{s['carrier_email']}>"
+    return (f" The customer asked: \"{asked}\"." if asked else "") + \
+           f" Shipment {s['id']}: {s['origin']} to {s['destination']}, delivery window " \
+           f"{_when(s.get('delivery_appt_start'))} to {_when(s.get('delivery_appt_end'))}. Carrier: {carrier}." \
+           " Nothing has been changed or sent. If the change is agreed, the carrier is the next call."
+
+
 def set_status(conn, c: dict, status: str, reason: str | None, notify: bool = True):
     """Change a case's status. Pass notify=False when the caller has just told the customer itself."""
     changed = status != c["status"]
@@ -176,9 +201,10 @@ def set_status(conn, c: dict, status: str, reason: str | None, notify: bool = Tr
     if status == "needs_human" and c["status"] != "needs_human":
         # Staff work in the TMS, so the handoff is left where they'll see it.
         kind, ent_id = _entity(c)
+        brief = _change_brief(c) if c["category"] == "change_request" and c["shipment_id"] else ""
         tms_client.add_note(kind, ent_id,
                             f"Needs a person: {CATEGORIES.get(c['category'], c['category'])} ({c['id']})."
-                            + (f" {reason}" if reason else ""),
+                            + (f" {reason}" if reason else "") + brief,
                             action="handoff", source_ref=c["id"])
     if notify and changed and status in CUSTOMER_ACK and c["shipment_id"] and c["channel"] != "monitor":
         post_to_customer(conn, c, "agent", CUSTOMER_ACK[status])

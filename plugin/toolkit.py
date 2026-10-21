@@ -141,8 +141,16 @@ def decide_case(case_id: str, body: Optional[DecideIn] = None):
                 "guardrails": [{"flag": "not_a_shipment_case", "reason": reason}],
                 "category": c["category"], "category_source": "detector"}
 
-    result = shipment_check(c["shipment_id"], sender=body.sender)
+    shipment = tms_client.shipment(c["shipment_id"])
+    result = shipment_check(c["shipment_id"], sender=body.sender, s=shipment)
     category, source, unsure = _final_category(c, body)
+
+    # What the customer asked decides what matters. A truck or driver question is answered by
+    # the TMS when both are on record, even if a milestone is overdue (that is a question for the carrier).
+    if (category == "truck_number" and result["recommendation"] == "ask_carrier"
+            and shipment.get("truck_id") and shipment.get("driver_name")):
+        result["recommendation"] = "answer_from_tms"
+        result["summary"] = "The truck and driver are on record; answer from the TMS."
 
     guardrails = list(result["guardrails"])
     if unsure:

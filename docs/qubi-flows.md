@@ -48,6 +48,8 @@ under 80 words, no double quotes or line breaks in the message.
 | Topic is `quote_question` on a shipment | `needs_human` |
 | Classifier confidence below `CLASSIFIER_MIN_CONFIDENCE` (0.6) | `needs_human` |
 | Account on hold, unusable email, unknown sender | `needs_human` (from the shipment check) |
+| Topic is `truck_number` and the truck and driver are on record | `answer_from_tms`, even if a milestone is overdue |
+| A `change_request` goes to a person | The handoff note tells operations what was asked, the shipment, and the carrier's contact. Nothing is changed or sent; if the change is agreed, the carrier is the next call |
 | Detector case | keeps its own topic; the classifier's answer is ignored |
 | Classifier gives nothing usable | the plugin's keyword reading is used |
 
