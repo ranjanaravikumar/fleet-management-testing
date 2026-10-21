@@ -3,8 +3,8 @@
   "exportedAt": "2026-10-21T00:26:06.5988968+00:00",
   "exportedFrom": "AgentHub",
   "workflow": {
-    "key": "ssa-resolve-shipment-issue",
-    "name": "SSA - Resolve shipment issue",
+    "key": "ssa-resolve-shipment-issue-v2",
+    "name": "SSA - Resolve shipment issue v2",
     "description": "When a shipment has an issue, check the TMS API, fix it automatically if possible, or email the carrier to ask for missing information.",
     "category": "Default",
     "isEnabled": true,
