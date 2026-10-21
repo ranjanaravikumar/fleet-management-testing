@@ -37,7 +37,7 @@
 
 ## Next
 1. In Qubi: create the Classifier and Customer Reply Writer agents, import
-   `docs/ssa-resolve-shipment-issue.v2.workflow.json`, select the agents in their nodes, publish
+   `docs/ssa-case-handler.workflow.json`, select the agents in their nodes, publish
 2. Connect Gmail, add the send node to Flow 1, build Flow 2 (spec in `docs/qubi-flows.md`);
    set `DEMO_CARRIER_EMAIL` to an inbox you own, then reset
 3. ActionHub task for `needs_human` once the tenant has it; rotate the webhook secret
