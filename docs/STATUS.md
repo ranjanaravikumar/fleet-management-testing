@@ -28,7 +28,7 @@
   - `python -m plugin.classifier_check`: 28 sample requests run through the real flow to check what the
     classifier reads (`docs/classifier-test-set.md`); not yet run against the real agent
   - Smoke test 66/66 with a Qubi webhook, 63/63 without
-- Docs: `docs/qubi-flows.md`, `docs/demo-runbook.md` (script + report), `plugin/README.md`
+- Docs: `docs/how-it-works.md`, `docs/qubi-flows.md`, `docs/demo-runbook.md`, `plugin/README.md`
 
 ## Decisions
 - AI understands, code decides: a classifier at the entry of Flow 1 picks a topic only; the plugin's
