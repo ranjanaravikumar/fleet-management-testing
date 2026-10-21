@@ -7,9 +7,8 @@
   printable BOL and rate confirmation; invoicing; book a quoted order; PO/PRO refs; staff order
   entry; charge codes; auto-rating; demo data (17 shipments, 5 carriers, 6 customers); ops menu
   collapses to icons (remembered)
-- Plugin: detector (every 60 s, once per problem), notes watcher (5 s), customer requests, order
-  events, toolkit, a repeated status/truck question reuses the last answer (never a change or price
-  question), delivered shipments answer from the TMS
+- Plugin: detector (60 s, once per problem), notes watcher (5 s), customer requests, order events,
+  toolkit; a repeated status/truck question reuses the last answer (never a change or price question)
 - Qubi Flow 1 live and tested end to end through the webhook (credential `TMS_API`, ngrok to :8100):
   SHP-2048 fixes itself, SHP-1042 goes to the carrier path, on-hold SHP-2051 goes to a person
 - Gap work (this session), all in the plugin so the Qubi flows stay small:
